@@ -6,24 +6,21 @@
 echo "Converting CBR  (Comic Book RAR archive) file to CBZ (Comic Book Zip archive) format as CBR are not as well supported for metadata.
 "
 
-# Use getopt to read parameters.
-PARSED_OPTIONS=$(getopt -n "$0"  -o "dh?q" --long "delete,help,quiet"  -- "$@")
-eval set -- "$PARSED_OPTIONS"
-
+# Use getopts to read parameters.
+# Apparently it's more reliable than getopt, but doesn't do long opts (wtf?)
 QUIET=0;
 
-while true;
-do
-  case "$1" in
-    -h|-\?|--help)
-     echo "usage $0 [-h|-?|--help] [-d|--delete] filename.cbr"
-     echo "  --delete option will remove the original file. Take care."
+while getopts ":dhq?" opt; do
+  case "$opt" in
+    -h|-\?)
+     echo "usage $0 [-h|-?] [-d] filename.cbr"
+     echo "  -d (delete) option will remove the original file. Take care."
      shift;
      exit;
      ;;
-    -d|--delete)
+    -d)
       DELETE=1; shift;;
-    -q|--quiet)
+    -q)
       QUIET=1; shift;;
     --)
       shift; break;;
@@ -82,9 +79,14 @@ while sourcefilename="$1"; do
   # Need to pushd or we get unwanted leading folder names.
   here=`pwd`
   pushd "/tmp";
-  zip --quiet -r "$here/${filename}.cbz" "${filename}"
+  zip -q -r "$here/${filename}.cbz" "${filename}"
   popd;
-  echo "Created '$here/${filename}.cbz'"
+  if [ -e "$here/${filename}.cbz" ]; then
+    echo "Created '$here/${filename}.cbz'"
+  else
+    echo "**** Something screwed up, failed to create zipfile for ${filename}."
+    exit 1;
+  fi
 
   rm -rf "/tmp/${filename}"
   if [[ $DELETE && ( $rarsuccess -eq 0 ) ]] ; then
