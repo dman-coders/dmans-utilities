@@ -20,6 +20,37 @@ function print_log($message, $priority = PEAR_LOG_INFO){
   $logger->log($message, $priority);
 };
 
+// Images smaller than this (thumbnails) are discarded.
+$min_filesize = 30*1024;
+
+/**
+ * Guess if I can find the most significant image in a page.
+ */
+function find_image_in_gallery_page($url, &$title = "") {
+  $page_source = file_get_contents($url);
+  $doc = new DOMDocument();
+  @$doc->loadHTML($page_source);
+  
+  $tags = $doc->getElementsByTagName('title');
+  foreach ($tags as $tag) {
+    $page_title = $tag->textContent;
+  }
+  
+  $imgs = $doc->getElementsByTagName('img');
+  $favorite_image = NULL;
+  $contents = array();
+  foreach ($imgs as $img) {
+    // A bunch of heuristics here.
+    // http://g.e-hentai.org/
+    if ($img->getAttribute('id') == 'img') {
+      $favorite_image = $img;
+    }
+    // Other patterns for scraping?
+  }
+  if ($favorite_image) {
+    return $favorite_image->getAttribute('src');
+  }
+}
 
 // Start parsing options
 
@@ -61,6 +92,13 @@ $urls = $commandline_input->args['url'];
 foreach ($urls as $url) {
   try {
     $base_url = new Net_URL2($url);
+
+    print_log("Fetching $url");
+    $page_source = file_get_contents($url);
+    $doc = new DOMDocument(); 
+    @$doc->loadHTML($page_source);
+
+    // Calculate the filename based off the URL, or scraped title.
     $safe_name = preg_replace('/[^a-zA-Z0-9_\-]+/', '_', $base_url->host);
     if (substr($safe_name, 0, 3) == 'www') {
       $safe_name = substr($safe_name, 4);
@@ -68,21 +106,22 @@ foreach ($urls as $url) {
     if ($base_url->path) {
       $safe_name .= '-' .  preg_replace('/[^a-zA-Z0-9_\-]+/', '-', $base_url->path);
     }
-    $dirname = "/tmp/$safe_name";
-    mkdir($dirname);
-
-    $page_title = preg_replace('/[^a-zA-Z0-9_\-]+/', ' ', $base_url->path) . ' - ' . $base_url->host; 
-
-    print_log("Fetching $url");
-    $page_source = file_get_contents($url);
-    $doc = new DOMDocument(); 
-    @$doc->loadHTML($page_source);
-
+    
     $tags = $doc->getElementsByTagName('title');
     foreach ($tags as $tag) {
       $page_title = $tag->textContent; 
     }
+    if (! empty($page_title)) {
+      $safe_name = preg_replace('/[^a-zA-Z0-9_\-]+/', '-', $page_title);
+    }
 
+    $dirname = "/tmp/$safe_name";
+    mkdir($dirname);
+    
+    $page_title = preg_replace('/[^a-zA-Z0-9_\-]+/', ' ', $base_url->path) . ' - ' . $base_url->host;
+    
+    
+    
     $tags = $doc->getElementsByTagName('img');
 
     $contents = array();
@@ -93,7 +132,7 @@ foreach ($urls as $url) {
       while ($tag_parent && $tag_parent->nodeName != 'a') {
         $tag_parent = $tag_parent->parentNode;
       }
-      if ($tag+parent && $tag_parent->nodeName == 'a') {
+      if ($tag_parent && $tag_parent->nodeName == 'a') {
         $tag_src = $tag_parent->getAttribute('href');
       }
       else {
@@ -103,8 +142,13 @@ foreach ($urls as $url) {
       $parts = explode('.', $tag_src);
       $suffix = array_pop($parts);
       if (strtolower($suffix) != 'jpg') {
-        print_log("$tag_src is a $suffix not a jpeg, skipping it");
-        continue;
+        // Maybe it's a gallery page that holds an image.
+        if (! ($maybe_gallery_img = find_image_in_gallery_page($tag_src))) {
+          print_log("$tag_src is a $suffix not a jpeg, skipping it");
+          continue;
+        }
+        // Else we may have found an image after all.
+        $tag_src = $maybe_gallery_img;
       }
 
       print_log("Fetching $tag_src"); 
@@ -114,21 +158,30 @@ foreach ($urls as $url) {
         $file_source = file_get_contents($tag_src);
         file_put_contents($save_as, $file_source);
         print_log("Saved to $save_as");
+        // Discard thumbnails if any were picked up. (e-hentai)
+        
+        if (filesize($save_as) < $min_filesize) {
+          print_log("File size of $save_as is too small, throwing it away.");
+          unlink($save_as);
+        }
       }
-      $contents[$save_as] = array(
-        'filename' => $safe_filename,
-        'url' => $tag_src,
-      );
+      if (is_file($save_as)) {
+        $contents[$save_as] = array(
+          'filename' => $safe_filename,
+          'url' => $tag_src,
+        );
+      }
     }
 
     // Downloaded what we need, 
     // make the zip (current directory)
     $zip = new ZipArchive();
-    $filename = $safe_name .".zip";
+    $filename = $safe_name .".cbz";
 
     if ($zip->open($filename, ZIPARCHIVE::CREATE)!==TRUE) {
       exit("cannot open <$filename>\n");
     }
+    $manifest = '';
     foreach ($contents as $filepath => $file) {
       $zip->addFile($filepath, $file['filename']);
       $manifest .= "{$file['filename']}, '{$file['url']}'\n";
