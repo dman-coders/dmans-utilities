@@ -10,19 +10,19 @@ echo "Converting CBR  (Comic Book RAR archive) file to CBZ (Comic Book Zip archi
 # Apparently it's more reliable than getopt, but doesn't do long opts (wtf?)
 QUIET=0;
 
-while getopts ":dhq?" opt; do
+while getopts dhq? opt; do
   case "$opt" in
-    -h|-\?)
+    h|\?)
      echo "usage $0 [-h|-?] [-d] filename.cbr"
      echo "  -d (delete) option will remove the original file. Take care."
      shift;
      exit;
      ;;
-    -d)
+    d)
       DELETE=1; shift;;
-    -q)
+    q)
       QUIET=1; shift;;
-    --)
+    -)
       shift; break;;
   esac
 done
