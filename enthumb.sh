@@ -6,6 +6,9 @@
 # copy that thumb to use as a file icon on the package
 # maybe also support other metadata in a ComicBookLover or XMP compatible way.
 
+# To run in a folder, try 
+#   for f in *.cbz; do enthumb.sh "$f"; done
+
 export TEMPDIR="/tmp/enthumb";
 if [ ! -d $TEMPDIR ] ; then
   mkdir $TEMPDIR
