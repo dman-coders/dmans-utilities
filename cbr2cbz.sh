@@ -4,7 +4,7 @@
 # .cbr or .rar archives should be re-packed as zips.
 
 echo "Converting CBR  (Comic Book RAR archive) file to CBZ (Comic Book Zip archive) format as CBR are not as well supported for metadata.
-"
+" >&2
 
 # Use getopts to read parameters.
 # Apparently it's more reliable than getopt, but doesn't do long opts (wtf?)
@@ -30,14 +30,14 @@ done
 # Check unrar requirement.
 rarbin=`which unrar`
 if [ "$rarbin" == "" ] ; then
-  echo "You need unrar on the commandline. Install with 'sudo apt-get install unrar'"
-  echo "'With OSX homebrew you can install it with  'brew install unrar'"
+  echo "You need unrar on the commandline. Install with 'sudo apt-get install unrar'" >&2
+  echo "'With OSX homebrew you can install it with  'brew install unrar'" >&2
   exit 1
 fi
 
 # At least one filename is expected.
 if [ $# -lt 1 ] ; then
-  echo "Please pass in a file name to convert."
+  echo "Please pass in a file name to convert." >&2
   exit 1
 fi
 
@@ -51,12 +51,12 @@ while sourcefilename="$1"; do
   filename="${basename%.*}"
 
   if [ "$extension" != "cbr" ] && [ "$extension" != "rar" ] ; then 
-    echo "Skipping '$sourcefilename'. This only works on .cbr or .rar files."
+    echo "Skipping '$sourcefilename'. This only works on .cbr or .rar files." >&2
     continue;
   fi
 
   if [ ! -f "$sourcefilename" ]; then
-    echo "Skipping '$sourcefilename'. File not found.";
+    echo "Skipping '$sourcefilename'. File not found."; >&2
     continue;
   fi
 
@@ -64,39 +64,42 @@ while sourcefilename="$1"; do
   # Actually begin here.
   #######################
 
-  [ $QUIET == 1 ] || echo "Processing '$sourcefilename'.";
-  [ $QUIET == 1 ] || echo "Unpacking archive temporarily to recompile ${filename}";
+  [ $QUIET == 1 ] || echo "Processing '$sourcefilename'." >&2;
+  [ $QUIET == 1 ] || echo "Unpacking archive temporarily to recompile ${filename}" >&2;
 
   mkdir "/tmp/${filename}"
   # To quieten unrar messages is -idq
-  $rarbin -idq x "$sourcefilename" "/tmp/${filename}"
+  $rarbin -idq x "$sourcefilename" "/tmp/${filename}" >&2;
   rarsuccess=$?
-  [ $QUIET == 1 ] || echo "Unpacked to /tmp/${filename}";
+  [ $QUIET == 1 ] || echo "Unpacked to /tmp/${filename}" >&2;
   if [[ $rarsuccess -ne 0 ]] ; then
-    echo "**** Unpacking '$sourcefilename' threw an error or warning."
+    echo "**** Unpacking '$sourcefilename' threw an error or warning." >&2;
   fi
 
   # Need to pushd or we get unwanted leading folder names.
-  here=`pwd`
-  pushd "/tmp";
-  zip -q -r "$here/${filename}.cbz" "${filename}"
-  popd;
-  if [ -e "$here/${filename}.cbz" ]; then
-    echo "Created '$here/${filename}.cbz'"
+  # pushd and popd are noisy though.
+  sourcefilename=`readlink -f "$sourcefilename"`
+  basedir=`dirname "$sourcefilename"`
+  pushd "/tmp" > /dev/null;
+  `zip -q -r "$basedir/${filename}.cbz" "${filename}"` >&2
+  popd > /dev/null;
+  if [ -e "$basedir/${filename}.cbz" ]; then
+    # The filename is the only thing we expect to output onto STDOUT
+    echo "$basedir/${filename}.cbz"
   else
-    echo "**** Something screwed up, failed to create zipfile for ${filename}."
+    echo "**** Something screwed up, failed to create zipfile for ${filename}." >&2
     exit 1;
   fi
 
   rm -rf "/tmp/${filename}"
   if [[ $DELETE && ( $rarsuccess -eq 0 ) ]] ; then
-    echo "** Deleting original '$sourcefilename' file!"
+    echo "** Deleting original '$sourcefilename' file!" >&2
     rm "$sourcefilename";
   fi
 
-  [ $QUIET == 1 ] || echo "Cleaned up, deleted /tmp/${filename}";
+  [ $QUIET == 1 ] || echo "Cleaned up, deleted /tmp/${filename}" >&2
 
 done; # end loop
 
-echo "Done."
+echo "Done." >&2
 

@@ -138,15 +138,29 @@ if [ -n "$COVER_PATH" ] ; then
   # Generate the thumbnail resource for this image
   echo "Aut-generating thumbnail for the cover image itself"
   $PATH_TO_SIPS --addIcon "$COVER_PATH"
+
+  # That produced blurry results. Try again
+  # Resize the image to icon dimensions
+  #$PATH_TO_SIPS --resampleHeightWidthMax 256 --padToHeightWidth 256 256 "$COVER_PATH"
+  # Convert image to an icn format
+  #$PATH_TO_SIPS -s format icns "$COVER_PATH" --out "${TEMPDIR}/tempicns.icns"
+  # Apply icon to self.
+  #seticon -d "${TEMPDIR}/tempicns.icns" "$COVER_PATH"
+  # failed.
+
   echo "Pretty sure I have a thumbnail now. Transferring it to the archive"
   $PATH_TO_DEREZ -only icns "$COVER_PATH" > "${TEMPDIR}/tempicns.rsrc"
   # Now apply this resource to the original archive file
+
+
   
   if [ -f "$ARCHIVE" ]; then
     # Destination is a file
     $PATH_TO_REZ -append "${TEMPDIR}/tempicns.rsrc" -o "$ARCHIVE" && success=1
     # And flag C for CustomIcon on
     $PATH_TO_SETFILE -a C "$ARCHIVE"
+    echo "Set icon on $ARCHIVE"
+     
   elif [ -d "$ARCHIVE" ]; then
     echo Destination is a directory
     # Create the magical Icon\r file
