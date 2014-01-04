@@ -2,11 +2,17 @@
 <?php
 /**
  * @file Make a zip of images from a web page
-*/
-
-// Given an URL of a page containing a gallery,
-// download the images,
-// zip them into an album
+ *
+ * Given an URL of a page containing a gallery,
+ * download the images,
+ * zip them into an album
+ */
+/**
+ * Requirements
+ *
+ * Install pear
+ * sudo pear install Console_Commandline Net_URL2 Log
+ */
 
 // Configurable settings
 
@@ -28,7 +34,7 @@ $rename_files = FALSE;
 // but that explodes if unpacked. Retain the folder inside the package.
 $use_subfolder = TRUE;
 
-  
+
 
 #######################################
 require_once 'Console/CommandLine.php';
@@ -103,7 +109,7 @@ foreach ($todo as $url) {
 
     print_log("Fetching $url");
     $page_source = file_get_contents($url);
-    $doc = new DOMDocument(); 
+    $doc = new DOMDocument();
     @$doc->loadHTML($page_source);
 
     // Calculate the filename based off the URL, or scraped title.
@@ -116,18 +122,18 @@ foreach ($todo as $url) {
       if ($base_url->path) {
         $safe_name .= '-' .  safename($base_url->path);
       }
-      
+
       $tags = $doc->getElementsByTagName('title');
       foreach ($tags as $tag) {
-        $page_title = trim($tag->textContent); 
+        $page_title = trim($tag->textContent);
       }
       if (! empty($page_title)) {
         $safe_name = safename($page_title);
       }
-  
+
       $dirname = "/tmp/$safe_name";
       mkdir($dirname);
-    
+
       $page_title = preg_replace('/[^a-zA-Z0-9_\-]+/', ' ', $base_url->path) . ' - ' . $base_url->host;
     }
     // Identification setup complete, start scraping.
@@ -138,8 +144,8 @@ foreach ($todo as $url) {
       $unwanted->parentNode->removeChild($unwanted);
       print_log("Discarded sidebar for cleaner parsing.");
     }
-    
-    
+
+
     $tags = $doc->getElementsByTagName('img');
 
     foreach ($tags as $tag) {
@@ -156,13 +162,13 @@ foreach ($todo as $url) {
       else {
         $tag_src = $base_url->resolve($tag->getAttribute('src'));
       }
-      
-      // Check it's an image 
+
+      // Check it's an image
       $url_parts = parse_url($tag_src);
       if (in_array($url_parts['host'], $blacklist)) {
         continue;
       }
-      
+
       $filename = basename($url_parts['path']);
       $suffix = pathinfo($filename, PATHINFO_EXTENSION);
       if (strtolower($suffix) != 'jpg') {
@@ -179,20 +185,20 @@ foreach ($todo as $url) {
         // Else we may have found an image after all.
         $tag_src = $maybe_gallery_img;
       }
-      
-      // Need to recalculate this if the tag_src has changed from a gallery 
+
+      // Need to recalculate this if the tag_src has changed from a gallery
       // page to the actual gallery file now.
       $url_parts = parse_url($tag_src);
       $filename = basename($url_parts['path']);
       $suffix = pathinfo($filename, PATHINFO_EXTENSION);
-      
+
       print_log("Fetching $tag_src");
       // Take care to keep the filename but drop args, anchors and such.
       if ($rename_files && !empty($suggested_image_title)) {
-        
+
         // Ensure uniqueness - gallery pages may not return useful titles each time.
         if (isset($title_count[$suggested_image_title])) {
-          
+
           if ($title_count[$suggested_image_title] == 1) {
             // Hm, should retroactivelyrename the first occurance with a 01 now.
             $previous_filename = safename($suggested_image_title) . '.' . $suffix;;
@@ -207,17 +213,17 @@ foreach ($todo as $url) {
             );
             print_log("Renamed the first occurance to $replacement_filename");
           }
-          
+
           $title_count[$suggested_image_title] ++;
           $suggested_image_title .= '-' . sprintf("%02d", $title_count[$suggested_image_title]);
         }
         else {
           $title_count[$suggested_image_title] = 1;
         }
-        
+
         $filename = $suggested_image_title . '.' . $suffix;
       }
-      
+
       $safe_filename = safename($filename);
       $save_as = $dirname . '/' . $safe_filename ;
       if (! is_file($save_as)) {
@@ -225,7 +231,7 @@ foreach ($todo as $url) {
         file_put_contents($save_as, $file_source);
         print_log("Saved to $save_as");
         // Discard thumbnails if any were picked up. (e-hentai)
-        
+
         if (filesize($save_as) < $min_filesize) {
           print_log("File size of $save_as is too small, throwing it away.");
           unlink($save_as);
@@ -239,9 +245,9 @@ foreach ($todo as $url) {
         );
       }
     } // Finished fetching each image into the temp dir.
-    
+
     // Support paging.
-    // If there is a link looking like a 'next', then add that to the list of 
+    // If there is a link looking like a 'next', then add that to the list of
     // page URLs that need processing (may loop forever if you get it wrong)
     $tags = $doc->getElementsByTagName('a');
     // Only allow one 'next' to be detected per page
@@ -256,35 +262,35 @@ foreach ($todo as $url) {
       #$urls[] = $nextpage_link->getAttribute('href');
       $todo->append($nextpage_link->getAttribute('href'));
     }
-    
+
     $pages_processed ++;
-    
+
   } catch (Exceptions $exc) {
     print_log("Processing $url failed");
   }
 } // Each URL
-    
-// Downloaded what we need, 
+
+// Downloaded what we need,
 
 if (! empty ($contents)) {
   // make the zip (current directory)
   $zip = new ZipArchive();
-  $filename = $safe_name .".cbz";
-  
-  if ($zip->open($filename, ZIPARCHIVE::CREATE)!==TRUE) {
-    exit("cannot open <$filename>\n");
+  $zipfilename = $safe_name .".cbz";
+
+  if ($zip->open($zipfilename, ZIPARCHIVE::CREATE)!==TRUE) {
+    exit("cannot open <$zipfilename>\n");
   }
   $manifest = '';
   foreach ($contents as $filepath => $file) {
-    // Traditional CBZ have all files in the root, 
+    // Traditional CBZ have all files in the root,
     // but that explodes if unpacked. Retain the folder inside the package.
-    $filename = $file['filename'];
+    $innerfilename = $file['filename'];
     if ($use_subfolder) {
-      $filename = $safe_name . '/' . $file['filename'];
+      $innerfilename = $safe_name . '/' . $file['filename'];
     }
-    $zip->addFile($filepath, $filename);
-    $manifest .= "{$filename}, '{$file['url']}'\n";
-    $zip->setCommentName($filename, $file['url']);
+    $zip->addFile($filepath, $innerfilename);
+    $manifest .= "{$innerfilename}, '{$file['url']}'\n";
+    $zip->setCommentName($innerfilename, $file['url']);
   }
   $zipinfo = '{
   "appID":"cbzget/001",
@@ -297,14 +303,14 @@ if (! empty ($contents)) {
     "publicationYear":'. date('Y') .',
     "publicationMonth":'. date('n') .',
     "tags":["Downloads"]
-  }}';   
-  
+  }}';
+
   $zip->addFromString("ZipInfo.txt", $zipinfo);
   $zip->addFromString("manifest.txt", $manifest);
   $zip->setArchiveComment($zipinfo);
   $zip->close();
-  print_log("Created zip file $filename");
-  print_log("numfiles: {$zip->numFiles}, size: " . format_bytes(filesize($filename)));
+  print_log("Created zip file $zipfilename");
+  print_log("numfiles: {$zip->numFiles}, size: " . format_bytes(filesize($zipfilename)));
 }
 else {
   print_log("No valid files retrieved. With no contents to bundle, I'm going to skip creating that zip file for you.");
@@ -355,7 +361,7 @@ function find_image_in_gallery_page($url, &$title = "") {
     $img_url = $img->getAttribute('src');
     $img_url_parts = parse_url($img_url);
     $img_class = $img->getAttribute('class');
-    
+
     // http://g.e-hentai.org/
     if ($img->getAttribute('id') == 'img') {
       $favorite_image = $img;
@@ -372,7 +378,7 @@ function find_image_in_gallery_page($url, &$title = "") {
     elseif ($img_class == 'pic' && preg_match('/imagetwist.com/', $img_url_parts['host'])) {
       $favorite_image = $img;
     }
-    
+
     // Is it big?
     elseif (intval($img->getAttribute('height')) >= 350 && intval($img->getAttribute('width')) >= 350) {
       $favorite_image = $img;
