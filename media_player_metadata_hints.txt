@@ -1,0 +1,8 @@
+
+To rename all files of the format 
+  "tvSeriesName - 2x03.avi" 
+into the tvdb recommended variant
+  "tvSeriesName - E2S03.avi"
+
+  for f in *; do  mv "$f" "$(echo $f | sed 's/\([0-9]\+\)x\([0-9]\+\)/S\1E\2/g' )"; done
+
