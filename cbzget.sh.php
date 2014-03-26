@@ -115,6 +115,7 @@ foreach ($todo as $url) {
     // Calculate the filename based off the URL, or scraped title.
     // Only calc this the first time.
     if (empty($safe_name)) {
+      $original_url = $base_url;
       $safe_name = safename($base_url->host);
       if (substr($safe_name, 0, 3) == 'www') {
         $safe_name = substr($safe_name, 4);
@@ -259,8 +260,7 @@ foreach ($todo as $url) {
     }
     if ($nextpage_link && $pages_processed <= $maximum_follow_distance) {
       print_log("Looks like I found a next-pager. Adding the 'next' URL to the TO-DO list.");
-      #$urls[] = $nextpage_link->getAttribute('href');
-      $todo->append($nextpage_link->getAttribute('href'));
+      $todo->append($base_url->resolve($nextpage_link->getAttribute('href')));
     }
 
     $pages_processed ++;
@@ -297,9 +297,9 @@ if (! empty ($contents)) {
   "lastModified":"'. date("Y-m-d h:i:s O") . '",
   "ComicBookInfo/1.0":{
     "title":"'. $page_title . '",
-    "series":"'. $base_url->host .'",
-    "publisher":"'. $base_url .'",
-    "url":"'. $base_url .'",
+    "series":"'. $original_url->host .'",
+    "publisher":"'. $original_url .'",
+    "url":"'. $original_url .'",
     "publicationYear":'. date('Y') .',
     "publicationMonth":'. date('n') .',
     "tags":["Downloads"]
@@ -309,7 +309,7 @@ if (! empty ($contents)) {
   $zip->addFromString("manifest.txt", $manifest);
   $zip->setArchiveComment($zipinfo);
   $zip->close();
-  print_log("Created zip file $zipfilename");
+  print_log("Created zip file '$zipfilename'");
   print_log("numfiles: {$zip->numFiles}, size: " . format_bytes(filesize($zipfilename)));
 }
 else {
