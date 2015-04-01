@@ -1,4 +1,4 @@
-#!/usr/local/apache2/bin/php
+#!/usr/bin/env php
 <?php
 # https://www.drupal.org/node/403742
 ############################################################
@@ -21,13 +21,15 @@
 #  and specify the databases that you want to allow name   #
 #  changing                                                #
 ############################################################
-$db_password = 'PASSWORD GOES HERE';
-$db_user = 'MYSQL USER NAME';
-$db_host = "-h HOSTNAME"; // "-h localhost"; // Probally localhost
-$db_port = "-P 3306"; // ""; //Use blank if not needed
-$db_name = $_SERVER['argv'][1];
-$prefix = $_SERVER['argv'][2];
-$remove = $_SERVER['argv'][3];
+$db_password = '';
+$db_user = 'drupaluser';
+$db_host = "-h 127.0.0.1"; // "-h localhost"; // Probally localhost
+$db_port = "-P 33066"; // ""; //Use blank if not needed
+$db_name = @$_SERVER['argv'][1];
+$prefix = @$_SERVER['argv'][2];
+$remove = @$_SERVER['argv'][3];
+$db_password_clause = "";
+if (!empty($db_password)) {$db_password_clause = "-p'$db_password'";}
 if(strtolower($remove) == 'remove' || strtolower($remove) == 'r'){
   $remove = (bool) TRUE;
 }
@@ -40,8 +42,11 @@ if(!in_array($db_name, array('drupal_site', 'd7' ) )){
   exit;
 }
 */
-$query = "mysql -u$db_user -B -p$db_password -s -r $db_host $port $db_name -e 'SHOW TABLES;'";
+$query = "mysql -u$db_user -B $db_password_clause -s -r $db_host $db_port $db_name -e 'SHOW TABLES;'";
+print "$query\n";
 exec($query, $tables);
+print_r($tables);
+$rename = array();
 if($remove){
   foreach($tables as $key => $t){
     $rename[$key]['from'] = $t;
@@ -54,8 +59,9 @@ else {
     $rename[$key]['to'] = $prefix . $t;
   }
 }
+print_r($rename);
 foreach($rename as $r){
-  $query = "mysql -u$db_user -B -p$db_password -s -r $db_host $port $db_name -e 'RENAME TABLE $db_name.{$r['from']} TO $db_name.{$r['to']};'";
+  $query = "mysql -u$db_user -B $db_password_clause -s -r $db_host $db_port $db_name -e 'RENAME TABLE $db_name.{$r['from']} TO $db_name.{$r['to']};'";
   exec($query);
 }
 exit;
