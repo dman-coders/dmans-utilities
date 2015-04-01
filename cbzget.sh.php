@@ -1,4 +1,4 @@
-#!/usr/bin/php
+#!/usr/bin/env php
 <?php
 /**
  * @file Make a zip of images from a web page
@@ -193,6 +193,14 @@ foreach ($todo as $url) {
       $filename = basename($url_parts['path']);
       $suffix = pathinfo($filename, PATHINFO_EXTENSION);
 
+      // Some image servers are /image.php?...&n=07.jpg so we need to grab the n value as the filename.
+      if ($filename == 'image.php') {
+        parse_str($url_parts['query'], $args);
+        if (isset($args['n'])) {
+          $filename = $args['n'];
+        }
+      }
+
       print_log("Fetching $tag_src");
       // Take care to keep the filename but drop args, anchors and such.
       if ($rename_files && !empty($suggested_image_title)) {
@@ -237,6 +245,9 @@ foreach ($todo as $url) {
           print_log("File size of $save_as is too small, throwing it away.");
           unlink($save_as);
         }
+      } 
+      else {
+        print_log("Did not save fetched $tag_src as '$filename'");
       }
       if (is_file($save_as)) {
         $contents[$save_as] = array(
