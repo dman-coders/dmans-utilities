@@ -73,6 +73,16 @@ git commit -m "Remove $PROJECT_NAME feature for splitting into sub-project" $PRO
 git subtree add --prefix=$PROJECT_PATH $PROJECT_NAME $PROJECT_BRANCH
 git tag "AFTER_SUBTREE_SPLIT_$PROJECT_NAME"
 
+
+# It seems to be best to remove the reference to the sub-project remote
+# immediately or else the subproject gets pulled into your proj
+# the next time you attempt a git pull *awful* !?
+# After hours of tracing, I can blame it on git rebase.
+# http://stackoverflow.com/questions/27414132/git-subtree-split-merge-works-poorly/30204551#30204551
+# So stop that.
+git config branch.master.rebase false
+
+
 # git status
 
 echo "This process has now already made the git commits to your project. CHECK this now before pushing."
