@@ -1,0 +1,46 @@
+#!/bin/bash
+
+# Given a file, list of files, or directory, including images,
+# Process them all by:
+# extracting the named tag and displaying it
+
+# Invoke with
+# exif-audit-tag $TAG $SOURCE
+
+function processFile1Arg {
+
+    local exif_tag="$1"
+    local source_file="$2"
+
+    if [[ ! -f "${source_file}" ]]; then
+        echo "$identifier Error: source file '$source_file' is not a file" >&2
+        return 1
+    fi
+
+    local tag_value=$(exiftool -s -S -${exif_tag} "${source_file}")
+    printf "%-40s \n  %-40s\n" "${source_file}" "${exif_tag}:${tag_value}"
+
+    return 0
+}
+
+function processFiles1Arg {
+    tag=$1
+    shift
+    for file in "$@"; do
+        if [[ -d $file ]]; then
+            # If the argument is a directory, process all files in the directory
+            for f in "$file"/*; do
+                processFile1Arg "$tag" "$f"
+            done
+        else
+            # If the argument is a file, process the file
+            processFile1Arg  "$tag" "$file"
+        fi
+    done
+}
+
+# Call the processFiles function with the provided arguments
+# pop the first, pipe the rest.
+tag=$1
+shift
+processFiles1Arg $tag "$@"

@@ -1,0 +1,25 @@
+#!/bin/bash
+
+# Given a single file,
+# If it as an exif UUID value,
+# rename the file and move it to a global storage area.
+
+UUID_ARCHIVE_PATH=${UUID_ARCHIVE_PATH:-~/Downloads/webp_archive}
+
+source_file="$1"
+
+# Check if the source file exists
+if [ ! -f "$source_file" ]; then
+  echo "Source file not found: $source_file" >&2
+  exit 1
+fi
+
+# Generate the target file name
+uuid=$(exiftool -s -S -UUID "${source_file}")
+extension="${source_file##*.}"
+
+target_file="${UUID_ARCHIVE_PATH}/${uuid}.${extension}"
+mv "$source_file" "$target_file"
+
+echo "Moved $source_file to $target_file"   >&2
+

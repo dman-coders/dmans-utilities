@@ -1,0 +1,37 @@
+#!/bin/bash
+
+# Given a single file,
+# If it has an exif UUID value,
+# Retrieve a uuid-named version from storage.
+# so:
+# If a gif knows the uuid of its original webp file
+# return the path of that.
+
+UUID_ARCHIVE_PATH=${UUID_ARCHIVE_PATH:-~/Downloads/UUID_ARCHIVE}
+
+source_file="$1"
+
+# Check if the source file exists
+if [ ! -f "$source_file" ]; then
+  echo "Source file not found: $source_file" >&2
+  exit 1
+fi
+
+# Generate the target file name
+uuid=$(exiftool -s -S -UUID "${source_file}")
+# name_only=$(basename "${1%.*}");
+
+function find_best_matching_filename {
+  find "$UUID_ARCHIVE_PATH" -name "${1}.*" | head -1;
+}
+
+target_file=$(find_best_matching_filename "$uuid")
+
+if [ ! -z "$target_file" ]; then
+  echo "Matching file found at $target_file" >&2
+  echo $target_file;
+  exit 0;
+fi;
+
+echo "No file matching key $uuid found in $UUID_ARCHIVE_PATH" >&2
+exit 1;

@@ -6,6 +6,10 @@
 # This will take the named folder from within a git repo, bringing history,
 # and set up a newly inited repo for it, stand-alone.
 #
+# Used for converting a monolith project - like a Drupal that has a lot of custom modules
+# Into one that can be managed with composer ot submodules by spawning that branch into a
+# project of its own/
+#
 # http://stackoverflow.com/questions/359424/detach-subdirectory-into-separate-git-repository
 
 

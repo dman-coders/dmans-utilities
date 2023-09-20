@@ -1,0 +1,52 @@
+#!/bin/bash
+
+# Given a file, list of files, or directory, including images,
+# Process them all by:
+# wiping the named tag
+
+# Invoke with
+# exif-wipe-tag $TAG $SOURCE
+
+function processFile1Arg {
+
+    local exif_tag="$1"
+    local source_file="$2"
+    local exif_option="-quiet -overwrite_original"
+
+
+    if [[ ! -f "${source_file}" ]]; then
+        echo "$identifier Error: source file '$source_file' is not a file" >&2
+        return 1
+    fi
+
+    local tag_value=$(exiftool -s -S -${exif_tag} "${source_file}")
+    if [[ ! -z "$tag_value" ]]; then
+      echo "Wiping ${exif_tag}:${tag_value} from ${source_file}"
+      echo exiftool -${exif_tag}= "${source_file}"
+      exiftool  ${exif_option} -${exif_tag}= "${source_file}"
+    fi
+
+    return 0
+}
+
+function processFiles1Arg {
+    tag=$1
+    shift
+    for file in "$@"; do
+        if [[ -d $file ]]; then
+            # If the argument is a directory, process all files in the directory
+            for f in "$file"/*; do
+                processFile1Arg "$tag" "$f"
+            done
+        else
+            # If the argument is a file, process the file
+            processFile1Arg  "$tag" "$file"
+        fi
+    done
+}
+
+# Call the processFiles function with the provided arguments
+# pop the first, pipe the rest.
+tag=$1
+shift
+processFiles1Arg $tag "$@"

@@ -1,0 +1,32 @@
+#!/bin/bash
+
+# A droptarget file.
+# use to add arbitrary exif tags to a given file.
+#
+# Create a symlink or alias to this script on your desktop or similar
+# Rename the alias to the term you want to use
+# Drop a media file onto this drop target
+# It will add the name of the alias to the file.
+
+term=$0
+
+function processFile {
+  local source_file=$1
+  local exif_option="-quiet -overwrite_original"
+  exiftool ${exif_option} "${source_file}" -XMP:Subject-="$term" -XMP:Subject+="$term"
+}
+
+function processFiles {
+    for file in "$@"; do
+        if [[ -d $file ]]; then
+            # If the argument is a directory, process all files in the directory
+            for f in "$file"/*; do
+                processFile "$f"
+            done
+        else
+            # If the argument is a file, process the file
+            processFile "$file"
+        fi
+    done
+}
+parallalProcessFiles "$@"

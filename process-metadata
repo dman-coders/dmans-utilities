@@ -1,0 +1,129 @@
+#!/bin/bash
+
+# Serialize provenance of a file into portable embedded metadata.
+
+# Given a file, list of files, or directory, including images,
+# Process them all by:
+# Generating a uuid to try and track these as we go.
+# The uuid should be a hash of the original binaru data.
+# Checking the OSX filesystem for provenance (where it was downloaded from )
+# and migrating these two new data points into the exif data of the file.
+
+# Saves a generated UUID as uuid and ImageSupplierImageID:"Suppliers Image ID"
+# Saves the download origin (wherefrom) as IPTC:Source, XMP:Identifier and XMP-dc:Source
+
+# To find files with a given keyword later:
+# exiftool -if 'Keywords=~/flirt/i'  -FilePath -Keywords .
+# To extract more info from the system, including osx-specific metadata
+# exiftool -a -G1 -s -api RequestAll=2 .
+
+function processFile {
+
+    function hash_generator {
+      #md5sum "$0" | cut -d' ' -f1
+      echo "~/bin/md5sum-clean \"$1\" " >&2
+      ~/bin/md5sum-clean "$1"
+    }
+
+    local exif_option="-quiet -overwrite_original"
+    local source_file="$1"
+
+    if [[ ! -f "${source_file}" ]]; then
+        echo "Error: $source_file is not a file"
+        return 1
+    fi
+    local image_size=$(exiftool -ImageSize "${source_file}")
+    if [[ -z "$image_size" ]] ; then
+      echo "$source_file is not an image or video $image_size"  >&2
+      return 1
+    fi
+
+    # Add a UUID for tracking and provenance.
+    # So I can meaningfully re-associate derivatives of the same image later.
+    # Generate a hash of just the binary part of the image
+    # so that metadata updates will not affect this logic.
+    # Image transformations and derivatives will though)
+    local uuid=$(exiftool -uuid -s -s -s "${source_file}")
+    if [[ -z $uuid ]]; then
+      uuid=$(hash_generator "${source_file}")
+      if exiftool ${exif_option} -uuid=$uuid "${source_file}"; then
+          echo "UUID '${uuid}' added to '${source_file}'" >&2
+      else
+          echo "Failed to add UUID to '${source_file}'" >&2
+      fi
+    else
+      echo "UUID for '${source_file}' is already : '${uuid}'" >&2
+    fi
+    # Additionally, set Image-Creator-Image-ID
+    # As it seems that Adobe Bridge does not recognise uuid
+    exiftool ${exif_option} -ImageSupplierImageID=$uuid "${source_file}";
+
+    # Extract the kMDItemWhereFroms metadata
+    # very naive string munging.
+    # WARNING - JPEGs seem to only allow 32 chars in these metadata fields!
+    # so we use the -m flag to force it.
+    local wherefroms=$(mdls --raw -name kMDItemWhereFroms "${source_file}" | tr -d '\n' | sed -E  's/[^"]*"([^"]*)".*/\1/')
+    if [[ -z $wherefroms || $wherefroms == "(null)" ]]; then
+        echo "Provenance (kMDItemWhereFroms) metadata is empty for '${source_file}'" >&2
+    else
+      echo "Setting the source for '${source_file}' to : $wherefroms" >&2
+      # Set the EXIF metadata
+      exiftool -m ${exif_option} "${source_file}" -XMP:Identifier="$wherefroms" -XMP-dc:Source="$wherefroms" -IPTC:Source="$wherefroms"
+    fi
+
+    # If the filename looks like something descriptive,
+    # Set that as the description. Unless it already has a description.
+    local basefilename=$(basename "$source_file")
+    filelabel="${basefilename%.*}"
+    local probably_text=false
+    if [[ "$filelabel" == *" "* || "$filelabel" == *"_"* || "$filelabel" == *"-"* ]]; then
+      probably_text=true
+    fi
+    if [[ "$probably_text" == "true" ]]; then
+      local description=$(exiftool -description -s -s -s "${source_file}")
+      if [[ -z $description ]]; then
+        exiftool -m ${exif_option} "${source_file}" -description="$filelabel"
+        echo "Setting the Description for '${source_file}' to '$filelabel'" >&2
+      else
+        echo "Description for '${source_file}' is already set to '$description'." >&2
+      fi
+    fi
+
+    # If we are in a subdirectory
+    # add the subdirname as a keyword tag
+    local rp=$(realpath "$source_file")
+    local dn=$(dirname "$rp")
+    local subdir=$(basename "$dn")
+    # exiftool wierdness to avoid duplicate tagging.
+    exiftool ${exif_option} "${source_file}" -XMP:Subject-="$subdir" -XMP:Subject+="$subdir"
+    # Subject works, and is what Bridge uses. Keywords does not seem to be a tag that is retained?
+    echo "Added keyword '$subdir' to '$source_file'." >&2
+
+    return 0
+}
+
+function processFiles {
+    for file in "$@"; do
+        if [[ -d $file ]]; then
+            # If the argument is a directory, process all files in the directory
+            for f in "$file"/*; do
+                processFile "$f"
+            done
+        else
+            # If the argument is a file, process the file
+            processFile "$file"
+        fi
+    done
+}
+
+function parallalProcessFiles {
+    # Find all files recursively in the input arguments.
+    # This uses parallal processing - note that feedback from the sub-processes may get jumpbled.
+    export -f processFile;
+    # Additional options `-print0` & `-0` are here to manage spaces in filenames.
+    # -P 4 is parallalization.
+    find "$@" -type f -print0 | xargs -0 -P 4 -n 1 -I{} bash -c 'processFile "$1"' _ "{}"
+}
+
+# Call the processFiles function with the provided arguments
+parallalProcessFiles "$@"

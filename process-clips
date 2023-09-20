@@ -1,0 +1,95 @@
+#!/bin/bash
+
+# Do a lot of steps to tag, sort, and catalog webp images.
+
+# Given a file, list of files, or directory, including webp animated clips,
+# Process them all by:
+# * amending the files metadata to add a UUID and provenance.
+# * if not already existing, derive a gif version of the webp
+# * duplicate the metadata from the webp into the gif, so the gif has a reference to the original
+# * archive the webp into a totally different place, giving it a filename derived from the cannonic UUID so that we can find it again later.
+
+function processFile {
+
+    local pid=$$
+    local identifier="[PID $pid]"
+    local exif_option="-quiet"
+
+    local source_file="$1"
+
+    if [[ ! -f "${source_file}" ]]; then
+        echo "$identifier Error: $source_file is not a file"
+        return 1
+    fi
+
+    local mime_type=$(exiftool -s -S -MimeType "${source_file}")
+    echo "$identifier Processing $source_file ($mime_type)" >&2
+
+    # Correct for misleading mime type. Do this before all else.
+    new_file=$( "correct-webp-jpegs" "${source_file}" )
+
+    if [ ! -z "$new_file" ] &&  [ ! "$new_file" == "$source_file" ]; then
+        # a change happened.
+        echo "new file after verification is '$new_file' " >&2
+        source_file="$new_file"
+        mime_type=$(exiftool -s -S -MimeType "${source_file}")
+    fi
+
+    if [[ "$mime_type" == "image/webp" ]] ; then
+      echo "$identifier Processing webp '$source_file'" >&2
+
+      new_file=$(processWebpFile "${source_file}")
+      if [ ! -z "$new_file" ] &&  [ ! "$new_file" == "$source_file" ]; then
+        # a change happened.
+        echo "new file after verification is '$new_file' " >&2
+        # either a jpeg or gif derivative is what we should work on from ow on.
+        source_file="$new_file"
+        mime_type=$(exiftool -s -S -MimeType "${source_file}")
+        # continue below
+      else
+        return 0
+      fi
+
+    fi
+
+    if [[ "$mime_type" == "image/gif" ]] ; then
+      # Ensure its metadata is up to date
+      duplicate-exif-from-webp "${source_file}"
+      # Even if there wasn't a webp to scrape, can also append other metadata from filename or directory
+      process-metadata "${source_file}"
+      return 0
+    fi
+
+    return 0
+}
+
+function processWebpFile {
+    local source_file="$1"
+
+    # Ensure its metadata is populated
+    process-metadata "${source_file}"
+    # Ensure it's got a corresponding gif
+    webp2gif "${source_file}"
+    local gif_version="${source_file%.*}.gif"
+    # Ensure the gif has a copy of the metadata
+    duplicate-exif-from-webp "${gif_version}"
+    # Shift the webp into the archive.
+    move-file-to-uuid-archive "${source_file}"
+    # Return the new derivative for any caller to work with.
+    echo "${gif_version}"
+
+    return 0
+}
+
+function parallalProcessFiles {
+    # Find all files recursively in the input arguments.
+    # This uses parallal processing - note that feedback from the sub-processes may get jumpbled.
+    export -f processFile;
+    export -f processWebpFile;
+    # Additional options `-print0` & `-0` are here to manage spaces in filenames.
+    # -P 4 is parallalization.
+    find "$@" -type f -print0 | xargs -0 -P 4 -n 1 -I{} bash -c 'processFile "$1"' _ "{}"
+}
+
+# Call the processFiles function with the provided arguments
+parallalProcessFiles "$@"

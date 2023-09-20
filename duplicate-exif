@@ -1,0 +1,54 @@
+#!/bin/bash
+
+# Given a gif file, look for a matching webp file,
+# and if found, duplicate its metadata into the gif.
+
+# Utility to synchronise information from one version of an image to another.
+# Used to propogate information that was attached to a webp to its derivative gif
+#  Because I downloaded a bunch, then converted them,
+# but actually should have saved some of their info from the original.
+# Specifically original GUID and provenance
+
+# Parse command-line arguments using getopts
+force=0
+while getopts ":f" opt; do
+  case $opt in
+    f)
+      force=1
+      ;;
+    \?)
+      echo "Invalid option: -$OPTARG" >&2
+      exit 1
+      ;;
+  esac
+done
+shift $((OPTIND-1))
+
+# Check if the source file exists
+if [ ! -f "$1" ]; then
+  echo "Source file not found: $1" >&2
+  exit 1
+fi
+
+# Generate the target file name
+source_file="$1"
+target_file="${source_file%.*}.webp"
+
+# Check if the target file exists
+if [ ! -f "$target_file" ]; then
+  if [ "$force" -eq 1 ]; then
+    # Generate a new WebP file from the source GIF using mogrify
+    mogrify -format webp "$source_file"
+    target_file="${source_file%.*}.webp"
+    echo "Creating: $target_file" >&2
+  else
+    echo "Target file not found: $target_file" >&2
+    echo "Invoke this script with the --force (-f) option to auto-convert and create it" >&2
+    exit 1
+  fi
+fi
+
+# Copy EXIF metadata from the source file to the target file using exiftool
+exiftool -tagsFromFile "$source_file" "-all:all>all:all" -overwrite_original "$target_file"
+echo "Updated EXIF metadata on $target_file" >&2
+

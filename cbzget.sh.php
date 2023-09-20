@@ -33,6 +33,11 @@ $rename_files = FALSE;
 // but that explodes if unpacked. Retain the folder inside the package.
 $use_subfolder = TRUE;
 
+$authenticated = false; // Unsupported yet.
+
+// Requirements
+// yes, this pre-dates composer.
+// pear install Console_CommandLine Log Net_URL2
 
 require_once 'Console/CommandLine.php';
 require_once 'Log.php';
@@ -51,7 +56,7 @@ $_cbzget_logger = Log::singleton('console', '', 'ident', NULL, PEAR_LOG_INFO);
  */
 function print_log($message, $priority = PEAR_LOG_INFO) {
   global $_cbzget_logger;
-  $_cbzget_logger->log($message, $priority);
+  @$_cbzget_logger->log($message, $priority);
 };
 
 // Start parsing options.
@@ -148,7 +153,9 @@ foreach ($todo as $url) {
       }
 
       $dirname = "/tmp/$safe_name";
-      mkdir($dirname);
+      if (!file_exists($dirname)) {
+          mkdir($dirname);
+      }
 
       $page_title = preg_replace('/[^a-zA-Z0-9_\-]+/', ' ', $base_url->path) . ' - ' . $base_url->host;
     }
@@ -212,6 +219,12 @@ foreach ($todo as $url) {
         parse_str($url_parts['query'], $args);
         if (isset($args['n'])) {
           $filename = $args['n'];
+        }
+      }
+      if ($filename == 'fullimg.php') {
+        parse_str($url_parts['query'], $args);
+        if (isset($args['gid'])) {
+          $filename = $args['gid'];
         }
       }
 
@@ -364,6 +377,7 @@ function get_domain_blacklist() {
  * Guess if I can find the most significant image in a page.
  */
 function find_image_in_gallery_page($url, &$title = "") {
+    global $authenticated;
   $page_source = file_get_contents($url);
   $base_url = new Net_URL2($url);
 
@@ -419,6 +433,30 @@ function find_image_in_gallery_page($url, &$title = "") {
 
     // Other patterns for scraping?
   }
+
+  // e-hentai includes an html link to
+  // <a href="https://e-hentai.org/fullimg.php?gid=813342&amp;page=2&amp;key=noz6ytka186">Download original 2081 x 3000 3.17 MB source</a>
+  // Use that over the embedded one if it's there.
+  // BUT, that's only available to authenticated?
+  if ($authenticated) {
+
+    $links = $doc->getElementsByTagName('a');
+    /**
+     * @var DomElement $link
+     */
+    foreach ($links as $link) {
+      // A bunch of heuristics here.
+      $parentNode = $img->parentNode;
+      $parentNodeName = $parentNode->nodeName;
+      $link_text = $link->ownerDocument->saveXML($link);
+      $img_url = $link->getAttribute('href');
+      $img_url_parts = parse_url($img_url);
+      if (preg_match('/Download original/', $link_text) || preg_match('/fullimg/', $img_url)) {
+        return $base_url->resolve($img_url);
+      }
+    }
+  }
+
   if ($favorite_image) {
     return $base_url->resolve($favorite_image->getAttribute('src'));
   }
