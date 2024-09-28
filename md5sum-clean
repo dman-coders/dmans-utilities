@@ -1,0 +1,28 @@
+#!/bin/bash
+# Generate a hash of an image, irrespective of metadata.
+# When given a single filename as an argument of any image type,
+# convert that into a 'clean' image of the same format
+# by generating a temp file in the temp dir
+# with all metadata stripped.
+# Generate the md5 hash from that, and return the result.
+
+# check if an image file is provided as an argument
+if [ $# -ne 1 ]; then
+  echo "Usage: $0 <image_file>"
+  exit 1
+fi
+
+# create a temporary file
+temp_file="$(mktemp -u)"
+
+# strip all metadata from the image file and save it to the temporary file.
+# Be sure to quash any output.
+exiftool -all= -o "$temp_file"  "$1" >/dev/null 2>&1
+
+# calculate the md5 hash of the temporary file
+md5sum "$temp_file" | awk '{ print $1 }'
+
+# delete the temporary file
+echo $temp_file
+#rm "$temp_file"
+
