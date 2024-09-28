@@ -7,7 +7,7 @@
 # If a gif knows the uuid of its original webp file
 # return the path of that.
 
-UUID_ARCHIVE_PATH=${UUID_ARCHIVE_PATH:-~/Downloads/UUID_ARCHIVE}
+UUID_ARCHIVE_PATH=${UUID_ARCHIVE_PATH:-~/Downloads/webp_archive}
 
 source_file="$1"
 

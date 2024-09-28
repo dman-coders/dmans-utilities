@@ -1,0 +1,19 @@
+#!/bin/bash
+
+# Given the location of a manifest file containing URLs,
+# Iterate the list and use yt-dlp to extract the video
+
+list_file="$1"
+
+# Check if the source file exists
+if [ ! -f "$list_file" ]; then
+  echo "List file not found: $list_file" >&2
+  echo "Procide this utility with a text file containing a list of URLs to download from" >&2
+  exit 1
+fi
+
+cat $list_file | while read url
+do
+  echo "should download $url"
+
+done
