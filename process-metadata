@@ -2,15 +2,18 @@
 
 # Serialize provenance of a file into portable embedded metadata.
 
-# Given a file, list of files, or directory, including images,
+# Given a file, list of files, or directory, including images or videos,
 # Process them all by:
 # Generating a uuid to try and track these as we go.
-# The uuid should be a hash of the original binaru data.
+#   The uuid should be a hash of the original binaru data.
 # Checking the OSX filesystem for provenance (where it was downloaded from )
-# and migrating these two new data points into the exif data of the file.
+#   and migrating these two new data points into the exif data of the file.
 
 # Saves a generated UUID as uuid and ImageSupplierImageID:"Suppliers Image ID"
 # Saves the download origin (wherefrom) as IPTC:Source, XMP:Identifier and XMP-dc:Source
+
+# If we are in a subdirectory
+# add the subdirname as a keyword tag
 
 # To find files with a given keyword later:
 # exiftool -if 'Keywords=~/flirt/i'  -FilePath -Keywords .
@@ -21,8 +24,8 @@ function processFile {
 
     function hash_generator {
       #md5sum "$0" | cut -d' ' -f1
-      echo "~/bin/md5sum-clean \"$1\" " >&2
-      ~/bin/md5sum-clean "$1"
+      echo "md5sum-clean \"$1\" " >&2
+      md5sum-clean "$1"
     }
 
     local exif_option="-quiet -overwrite_original"
@@ -89,15 +92,16 @@ function processFile {
       fi
     fi
 
-    # If we are in a subdirectory
-    # add the subdirname as a keyword tag
-    local rp=$(realpath "$source_file")
-    local dn=$(dirname "$rp")
-    local subdir=$(basename "$dn")
-    # exiftool wierdness to avoid duplicate tagging.
-    exiftool ${exif_option} "${source_file}" -XMP:Subject-="$subdir" -XMP:Subject+="$subdir"
-    # Subject works, and is what Bridge uses. Keywords does not seem to be a tag that is retained?
-    echo "Added keyword '$subdir' to '$source_file'." >&2
+#    # If we are in a subdirectory
+#    # add the subdirname as a keyword tag
+#    local rp=$(realpath "$source_file")
+#    local dn=$(dirname "$rp")
+#    local subdir=$(basename "$dn")
+#    # exiftool wierdness to avoid duplicate tagging.
+#    exiftool ${exif_option} "${source_file}" -XMP:Subject-="$subdir" -XMP:Subject+="$subdir"
+#    # Subject works, and is what Bridge uses. Keywords does not seem to be a tag that is retained?
+#    echo "Added keyword '$subdir' to '$source_file'." >&2
+    process-dirname-as-keyword "$source_file"
 
     return 0
 }

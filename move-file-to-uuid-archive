@@ -4,7 +4,7 @@
 # If it as an exif UUID value,
 # rename the file and move it to a global storage area.
 
-UUID_ARCHIVE_PATH=${UUID_ARCHIVE_PATH:-~/Downloads/webp_archive}
+UUID_ARCHIVE_PATH=${UUID_ARCHIVE_PATH:-/Volumes/X2/webp_archive}
 
 source_file="$1"
 

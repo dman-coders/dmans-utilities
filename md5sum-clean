@@ -23,6 +23,6 @@ exiftool -all= -o "$temp_file"  "$1" >/dev/null 2>&1
 md5sum "$temp_file" | awk '{ print $1 }'
 
 # delete the temporary file
-echo $temp_file
-#rm "$temp_file"
+# echo $temp_file >&2
+rm "$temp_file"
 

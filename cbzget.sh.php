@@ -47,7 +47,7 @@ $blacklist = get_domain_blacklist();
 
 // Silly name due to coding standards.
 global $_cbzget_logger;
-$_cbzget_logger = Log::singleton('console', '', 'ident', NULL, PEAR_LOG_INFO);
+$_cbzget_logger = Log::singleton('console', '', 'ident', [], PEAR_LOG_INFO);
 
 /**
  * Stub around the logger.

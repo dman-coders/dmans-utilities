@@ -6,7 +6,9 @@
 
 # Invoke with
 # exif-audit-tag $TAG $SOURCE
+#
 
+# Process an individual file, given a tag and a filename as arge.
 function processFile1Arg {
 
     local exif_tag="$1"
@@ -23,11 +25,21 @@ function processFile1Arg {
     return 0
 }
 
+# Grap the tag as the first argument,
+# treat all others as filenames to iterate over.
 function processFiles1Arg {
-    tag=$1
+    tag="$1"
     shift
+
+    if (( $# != 1 ))
+    then
+      echo "Please pass in a file name as the second argument"
+      exit 1
+    fi
+
+
     for file in "$@"; do
-        if [[ -d $file ]]; then
+        if [[ -d "$file" ]]; then
             # If the argument is a directory, process all files in the directory
             for f in "$file"/*; do
                 processFile1Arg "$tag" "$f"
@@ -41,6 +53,6 @@ function processFiles1Arg {
 
 # Call the processFiles function with the provided arguments
 # pop the first, pipe the rest.
-tag=$1
+tag="$1"
 shift
-processFiles1Arg $tag "$@"
+processFiles1Arg "$tag" "$@"

@@ -36,6 +36,16 @@ function processFile {
 
     echo "Looking for a '$target_file' to match the '$source_file'" >&2
     if [[ ! -f "${target_file}" ]]; then
+        echo "No nearby '$target_file' to scrape metadata from." >&2
+
+        # Try scanning the archive to see if the webp is already there.
+        local uuid=$(exiftool -uuid -s -s -s "${source_file}")
+        if [[ -n "$uuid" ]]; then
+            echo "Looking for UUID $uuid to scrape metadata from." >&2
+            target_file=$(fetch-version-from-uuid-archive "${source_file}")
+        fi
+    fi
+    if [[ ! -f "${target_file}" ]]; then
         echo "No '$target_file' to scrape metadata from." >&2
         return 1
     fi
@@ -46,6 +56,8 @@ function processFile {
     exiftool $exif_option -tagsFromFile "$target_file" "-Source>Source" "$source_file"
     exiftool $exif_option -tagsFromFile "$target_file" "-Identifier>Identifier" "$source_file"
     exiftool $exif_option -tagsFromFile "$target_file" "-Description>Description" "$source_file"
+    exiftool $exif_option -tagsFromFile "$target_file" "-Subject>Subject" "$source_file"
+
     echo "Updated EXIF metadata on $source_file" >&2
 
     return 0
