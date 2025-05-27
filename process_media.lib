@@ -16,35 +16,123 @@ MEDIA_DB="$UTIL_DIR/media.sqlite"
 
 create_database(){
   echo ".open $MEDIA_DB" | sqlite3
-  SQL="
+  log_notice "Initializing database $MEDIA_DB"
+
+  # Create all tables at once with foreign key constraints
+  SQL="PRAGMA foreign_keys = ON;
   CREATE TABLE tag_types (type TEXT PRIMARY KEY);
-  CREATE TABLE tags (name TEXT PRIMARY KEY, type TEXT);
-  CREATE TABLE synonyms (synonym PRIMARY KEY, canonic TEXT);
+  CREATE TABLE tags (name TEXT PRIMARY KEY, type TEXT, 
+    FOREIGN KEY (type) REFERENCES tag_types(type));
+  CREATE TABLE synonyms (synonym TEXT PRIMARY KEY, canonic TEXT,
+    FOREIGN KEY (canonic) REFERENCES tags(name));"
+  echo "$SQL" | sqlite3 "$MEDIA_DB"
+  log_notice "Created tables in database $MEDIA_DB"
+
+  # Insert initial data
+  SQL="
+  INSERT INTO tag_types (type) VALUES ('container');
+  INSERT INTO tag_types (type) VALUES ('leaf');
   "
   echo "$SQL" | sqlite3 "$MEDIA_DB"
-  SQL="
-  insert into tag_types (type) values ('container') ;
-  ";
-  echo "$SQL" | sqlite3 "$MEDIA_DB"
-  log_notice "Created database $MEDIA_DB"
-}
 
-if [ ! -f "$MEDIA_DB" ]; then
-  create_database;
-fi
+  log_notice "Database $MEDIA_DB is ready"
+}
 drop_database(){
   rm "$MEDIA_DB"
   log_notice "Dropped database $MEDIA_DB"
 }
 
 
+# Check if the database file exists and is a valid SQLite database
+if [ ! -f "$MEDIA_DB" ]; then
+  log_notice "Database file does not exist. Creating it..."
+  create_database;
+else
+  # Check if it's a valid SQLite database by trying to run a simple query
+  if ! echo ".tables" | sqlite3 "$MEDIA_DB" &>/dev/null; then
+    log_notice "Database file exists but appears to be invalid. Recreating it..."
+    drop_database;
+    create_database;
+  else
+    log_notice "Database file exists and is valid."
+  fi
+fi
+
+
+# Check if a tag exists in the database, and create it if not
+# usage: ensure_tag_exists tag_name [tag_type]
+ensure_tag_exists(){
+  tag_name=$1
+  tag_type=${2:-leaf}  # Default to 'container' if no type is provided
+
+  # Check if the tag exists
+  SQL="SELECT name FROM tags WHERE name='$tag_name';"
+  result=$(echo "$SQL" | sqlite3 "$MEDIA_DB")
+
+  # If the tag doesn't exist, create it
+  if [ -z "$result" ]; then
+    log_notice "Tag '$tag_name' does not exist. Creating it with type '$tag_type'..."
+    SQL="
+    PRAGMA foreign_keys = ON;
+    INSERT INTO tags (name, type) VALUES ('$tag_name', '$tag_type');
+    "
+    echo "$SQL" | sqlite3 "$MEDIA_DB"
+  else
+    log_debug "Tag '$tag_name' already exists."
+  fi
+}
+
 # usage:
 # set_synonym_for canonic synonym
 set_synonym_for(){
   canonic=$1
   synonym=$2
-  SQL="
-  insert into synonyms (synonym, canonic) values ('$synonym', '$canonic') ;
-  ";
-  echo "$SQL" | sqlite3 "$MEDIA_DB"
+
+  # Ensure the canonic tag exists before setting the synonym
+  ensure_tag_exists "$canonic"
+
+  # Check if the synonym already exists
+  SQL="SELECT synonym FROM synonyms WHERE synonym='$synonym';"
+  result=$(echo "$SQL" | sqlite3 "$MEDIA_DB")
+
+  # If the synonym doesn't exist, create it
+  if [ -z "$result" ]; then
+    SQL="
+    PRAGMA foreign_keys = ON;
+    INSERT INTO synonyms (synonym, canonic) VALUES ('$synonym', '$canonic');
+    ";
+    echo "$SQL" | sqlite3 "$MEDIA_DB"
+    log_notice "Added synonym '$synonym' for tag '$canonic'."
+  else
+    log_debug "Synonym '$synonym' already exists."
+  fi
+}
+
+# List all tags in a column
+# If a tag has synonyms, list each of them, indented, after the tag.
+dump_tags(){
+  # Get all tags from the database
+  SQL="SELECT name, type FROM tags ORDER BY name;"
+  tags=$(echo "$SQL" | sqlite3 "$MEDIA_DB")
+
+  # Process each tag
+  echo "$tags" | while IFS='|' read -r tag_name tag_type; do
+    # If the tag is of type 'container', render it in grey
+    if [ "$tag_type" = "container" ]; then
+      printf "\033[90m%s\033[0m\n" "$tag_name"
+    else
+      printf "%s\n" "$tag_name"
+    fi
+
+    # Get all synonyms for this tag
+    SQL="SELECT synonym FROM synonyms WHERE canonic='$tag_name' ORDER BY synonym;"
+    synonyms=$(echo "$SQL" | sqlite3 "$MEDIA_DB")
+
+    # List each synonym indented
+    if [ -n "$synonyms" ]; then
+      echo "$synonyms" | while read -r synonym; do
+        printf "  AKA: %s\n" "$synonym"
+      done
+    fi
+  done
 }
