@@ -1,0 +1,9 @@
+#!/bin/bash
+
+source process_media.lib
+
+log_notice "Data directory is $UTIL_DIR"
+log_notice $(ls "$UTIL_DIR" )
+log_debug "Media DB is $MEDIA_DB"
+
+set_synonym_for Happy HAPPY

@@ -1,0 +1,50 @@
+#!/bin/bash
+
+# utilities re-used by the media processing tools
+
+UTIL_DIR=${UTIL_DIR:-~/.media_processing}
+mkdir -p "$UTIL_DIR"
+
+log_notice(){
+  echo "$1"
+}
+log_debug(){
+  echo "$1"
+}
+
+MEDIA_DB="$UTIL_DIR/media.sqlite"
+
+create_database(){
+  echo ".open $MEDIA_DB" | sqlite3
+  SQL="
+  CREATE TABLE tag_types (type TEXT PRIMARY KEY);
+  CREATE TABLE tags (name TEXT PRIMARY KEY, type TEXT);
+  CREATE TABLE synonyms (synonym PRIMARY KEY, canonic TEXT);
+  "
+  echo "$SQL" | sqlite3 "$MEDIA_DB"
+  SQL="
+  insert into tag_types (type) values ('container') ;
+  ";
+  echo "$SQL" | sqlite3 "$MEDIA_DB"
+  log_notice "Created database $MEDIA_DB"
+}
+
+if [ ! -f "$MEDIA_DB" ]; then
+  create_database;
+fi
+drop_database(){
+  rm "$MEDIA_DB"
+  log_notice "Dropped database $MEDIA_DB"
+}
+
+
+# usage:
+# set_synonym_for canonic synonym
+set_synonym_for(){
+  canonic=$1
+  synonym=$2
+  SQL="
+  insert into synonyms (synonym, canonic) values ('$synonym', '$canonic') ;
+  ";
+  echo "$SQL" | sqlite3 "$MEDIA_DB"
+}
