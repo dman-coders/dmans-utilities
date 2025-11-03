@@ -9,7 +9,7 @@ log_notice(){
   echo "$1"
 }
 log_debug(){
-  echo "$1"
+  printf "\033[93m$1\033[0m\n"
 }
 
 MEDIA_DB="$UTIL_DIR/media.sqlite"
@@ -21,8 +21,9 @@ create_database(){
   # Create all tables at once with foreign key constraints
   SQL="PRAGMA foreign_keys = ON;
   CREATE TABLE tag_types (type TEXT PRIMARY KEY);
-  CREATE TABLE tags (name TEXT PRIMARY KEY, type TEXT, 
-    FOREIGN KEY (type) REFERENCES tag_types(type));
+  CREATE TABLE tags (name TEXT PRIMARY KEY, type TEXT, parent TEXT,
+    FOREIGN KEY (type) REFERENCES tag_types(type),
+    FOREIGN KEY (parent) REFERENCES tags(name));
   CREATE TABLE synonyms (synonym TEXT PRIMARY KEY, canonic TEXT,
     FOREIGN KEY (canonic) REFERENCES tags(name));"
   echo "$SQL" | sqlite3 "$MEDIA_DB"
@@ -60,25 +61,73 @@ fi
 
 
 # Check if a tag exists in the database, and create it if not
-# usage: ensure_tag_exists tag_name [tag_type]
+# usage: ensure_tag_exists tag_name [tag_type] [parent]
 ensure_tag_exists(){
   tag_name=$1
-  tag_type=${2:-leaf}  # Default to 'container' if no type is provided
+  tag_type=${2:-leaf}  # Default to 'leaf' if no type is provided
+  parent=$3            # Optional parent tag
 
   # Check if the tag exists
-  SQL="SELECT name FROM tags WHERE name='$tag_name';"
+  SQL="SELECT name, type, parent FROM tags WHERE name='$tag_name';"
   result=$(echo "$SQL" | sqlite3 "$MEDIA_DB")
 
   # If the tag doesn't exist, create it
   if [ -z "$result" ]; then
     log_notice "Tag '$tag_name' does not exist. Creating it with type '$tag_type'..."
-    SQL="
-    PRAGMA foreign_keys = ON;
-    INSERT INTO tags (name, type) VALUES ('$tag_name', '$tag_type');
-    "
+
+    # If parent is provided, include it in the INSERT statement
+    if [ -n "$parent" ]; then
+      # Check if the parent tag exists
+      SQL="SELECT name FROM tags WHERE name='$parent';"
+      parent_exists=$(echo "$SQL" | sqlite3 "$MEDIA_DB")
+
+      # If the parent doesn't exist, create it
+      if [ -z "$parent_exists" ]; then
+        # Recursively ensure the parent tag exists (as a container)
+        ensure_tag_exists "$parent" "container"
+      fi
+
+      SQL="
+      PRAGMA foreign_keys = ON;
+      INSERT INTO tags (name, type, parent) VALUES ('$tag_name', '$tag_type', '$parent');
+      "
+    else
+      SQL="
+      PRAGMA foreign_keys = ON;
+      INSERT INTO tags (name, type) VALUES ('$tag_name', '$tag_type');
+      "
+    fi
+
     echo "$SQL" | sqlite3 "$MEDIA_DB"
   else
     log_debug "Tag '$tag_name' already exists."
+
+    # If parent is provided and the tag exists but has no parent, update it
+    if [ -n "$parent" ]; then
+      # Extract the current parent from the result
+      IFS='|' read -r _ _ current_parent <<< "$result"
+
+      # If the tag has no parent, update it
+      if [ -z "$current_parent" ]; then
+        # Check if the parent tag exists
+        SQL="SELECT name FROM tags WHERE name='$parent';"
+        parent_exists=$(echo "$SQL" | sqlite3 "$MEDIA_DB")
+
+        # If the parent doesn't exist, create it
+        if [ -z "$parent_exists" ]; then
+          # Recursively ensure the parent tag exists
+          ensure_tag_exists "$parent"
+        fi
+
+        # Update the tag with the parent
+        SQL="
+        PRAGMA foreign_keys = ON;
+        UPDATE tags SET parent = '$parent' WHERE name = '$tag_name';
+        "
+        echo "$SQL" | sqlite3 "$MEDIA_DB"
+        log_notice "Updated tag '$tag_name' with parent '$parent'."
+      fi
+    fi
   fi
 }
 
@@ -110,29 +159,176 @@ set_synonym_for(){
 
 # List all tags in a column
 # If a tag has synonyms, list each of them, indented, after the tag.
+# If a tag has a parent, it will be displayed under its parent with indentation.
 dump_tags(){
-  # Get all tags from the database
-  SQL="SELECT name, type FROM tags ORDER BY name;"
-  tags=$(echo "$SQL" | sqlite3 "$MEDIA_DB")
+  # First, get all root tags (tags with no parent)
+  SQL="SELECT name, type FROM tags WHERE parent IS NULL OR parent = '' ORDER BY name;"
+  root_tags=$(echo "$SQL" | sqlite3 "$MEDIA_DB")
 
-  # Process each tag
-  echo "$tags" | while IFS='|' read -r tag_name tag_type; do
-    # If the tag is of type 'container', render it in grey
+  # Process each root tag
+  echo "$root_tags" | while IFS='|' read -r tag_name tag_type; do
+    # Display the root tag
     if [ "$tag_type" = "container" ]; then
-      printf "\033[90m%s\033[0m\n" "$tag_name"
+      printf "\033[90m%s\033[0m\n" "$tag_name [root]"
     else
       printf "%s\n" "$tag_name"
     fi
 
-    # Get all synonyms for this tag
-    SQL="SELECT synonym FROM synonyms WHERE canonic='$tag_name' ORDER BY synonym;"
-    synonyms=$(echo "$SQL" | sqlite3 "$MEDIA_DB")
+    # Display synonyms for this tag
+    display_synonyms "$tag_name" "  "
 
-    # List each synonym indented
-    if [ -n "$synonyms" ]; then
-      echo "$synonyms" | while read -r synonym; do
-        printf "  AKA: %s\n" "$synonym"
+    # Display child tags recursively
+    display_child_tags "$tag_name" "|--"
+  done
+}
+
+
+# Update the tag hierarchy based on tag names with slashes
+# Tags with slashes in their names will have their parent set to the leftmost parts
+# For example, "Location/Inside/Bedroom" will have a parent of "Location/Inside"
+update_tag_hierarchy(){
+  log_notice "Updating tag hierarchy..."
+
+  # Get all tags with slashes in their names
+  SQL="SELECT name FROM tags WHERE name LIKE '%/%';"
+  tags_with_slashes=$(echo "$SQL" | sqlite3 "$MEDIA_DB")
+
+  # Process each tag
+  if [ -n "$tags_with_slashes" ]; then
+    # First, ensure all parent tags exist
+    echo "$tags_with_slashes" | while read -r tag_name; do
+      parent=$(parse_parent_of "$tag_name")
+      # Split the tag name by slashes
+      IFS='/' read -ra parts <<< "$tag_name"
+      # If there's only one part, skip (no parent)
+      if [ ${#parts[@]} -le 1 ]; then
+        continue
+      fi
+
+      # Ensure all parent tags in the hierarchy exist
+      current_path=""
+      for ((i=0; i<${#parts[@]}-1; i++)); do
+        if [ $i -eq 0 ]; then
+          current_path="${parts[$i]}"
+        else
+          current_path="$current_path/${parts[$i]}"
+        fi
+
+        # Ensure this parent tag exists as a container
+        ensure_tag_exists "$current_path" "container"
       done
+    done
+
+    # Now set the parent for each tag
+    # re-read the list to take into account any interim tags that may have been added.
+    tags_with_slashes=$(echo "$SQL" | sqlite3 "$MEDIA_DB")
+    echo "$tags_with_slashes" | while read -r tag_name; do
+      # Split the tag name by slashes
+      IFS='/' read -ra parts <<< "$tag_name"
+
+      # If there's only one part, skip (no parent)
+      if [ ${#parts[@]} -le 1 ]; then
+        continue
+      fi
+
+      # Determine the parent tag
+      parent_tag=""
+      if [ ${#parts[@]} -eq 2 ]; then
+        # For tags with one slash (e.g., "Location/Inside"), the parent is the first part
+        parent_tag="${parts[0]}"
+      else
+        # For tags with multiple slashes, build the parent path
+        parent_tag=""
+        for ((i=0; i<${#parts[@]}-1; i++)); do
+          if [ $i -eq 0 ]; then
+            parent_tag="${parts[$i]}"
+          else
+            parent_tag="$parent_tag/${parts[$i]}"
+          fi
+        done
+      fi
+
+      log_notice "Setting parent of '$tag_name' to '$parent_tag'"
+
+      # Update the tag's parent
+      SQL="PRAGMA foreign_keys = ON;
+      UPDATE tags SET parent = '$parent_tag' WHERE name = '$tag_name';"
+      echo "$SQL" | sqlite3 "$MEDIA_DB"
+    done
+
+    log_notice "Tag hierarchy updated successfully."
+  else
+    log_notice "No tags with slashes found."
+  fi
+
+  # Display the updated hierarchy
+  log_notice "Displaying updated tag hierarchy:"
+  dump_tags
+}
+
+# chop the rightmost part of a path off.
+# Basically identical to dirname?
+parse_parent_of(){
+  local tag_name="$1"
+  # Split the tag name by slashes
+  mapfile -d '/' -t parts < <(echo -n "$tag_name")
+
+  # If there's only one part, skip (no parent)
+  if [ ${#parts[@]} -le 1 ]; then
+    return 0
+  fi
+  # For tags with multiple slashes, build the parent path
+  parent_tag=""
+  for ((i=0; i<${#parts[@]}-1; i++)); do
+    if [ $i -eq 0 ]; then
+      parent_tag="${parts[$i]}"
+    else
+      parent_tag="$parent_tag/${parts[$i]}"
     fi
   done
+  echo $parent_tag
+}
+
+# Helper function to display synonyms for a tag
+display_synonyms(){
+  local tag_name="$1"
+  local indent="$2"
+
+  # Get all synonyms for this tag
+  SQL="SELECT synonym FROM synonyms WHERE canonic='$tag_name' ORDER BY synonym;"
+  synonyms=$(echo "$SQL" | sqlite3 "$MEDIA_DB")
+
+  # List each synonym indented
+  if [ -n "$synonyms" ]; then
+    echo "$synonyms" | while read -r synonym; do
+      printf "${indent}AKA: %s\n" "$synonym"
+    done
+  fi
+}
+
+# Helper function to display child tags recursively
+display_child_tags(){
+  local parent_tag="$1"
+  local indent="$2"
+
+  # Get all child tags for this parent
+  SQL="SELECT name, type FROM tags WHERE parent='$parent_tag' ORDER BY name;"
+  child_tags=$(echo "$SQL" | sqlite3 "$MEDIA_DB")
+  # Process each child tag
+  if [ -n "$child_tags" ]; then
+    echo "$child_tags" | while IFS='|' read -r tag_name tag_type; do
+      # Display the child tag with indentation
+      if [ "$tag_type" = "container" ]; then
+        printf "${indent}\033[90m%s\033[0m\n" "$tag_name"
+      else
+        printf "${indent}%s\n" "$tag_name"
+      fi
+
+      # Display synonyms for this child tag
+      display_synonyms "$tag_name" "${indent}  "
+
+      # Recursively display this child's children with increased indentation
+      display_child_tags "$tag_name" "${indent}"
+    done
+  fi
 }
