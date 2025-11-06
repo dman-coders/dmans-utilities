@@ -4,7 +4,13 @@
 # If it as an exif UUID value,
 # rename the file and move it to a global storage area.
 
-UUID_ARCHIVE_PATH=${UUID_ARCHIVE_PATH:-/Volumes/x-files/webp_archive}
+UUID_ARCHIVE_PATH=${UUID_ARCHIVE_PATH:-/data/webp_archive/}
+# Ensure the archive path is available
+if [ ! -d "$UUID_ARCHIVE_PATH" ]; then
+  echo "Archive path unavailable. Cannot move file. set UUID_ARCHIVE_PATH=$UUID_ARCHIVE_PATH to somewhere else that exists and is writable" >&2
+  exit 1
+fi
+
 
 source_file="$1"
 

@@ -7,7 +7,12 @@
 # If a gif knows the uuid of its original webp file
 # return the path of that.
 
-UUID_ARCHIVE_PATH=${UUID_ARCHIVE_PATH:-/Volumes/x-files/webp_archive}
+UUID_ARCHIVE_PATH=${UUID_ARCHIVE_PATH:-/data/webp_archive/}
+# Ensure the archive path is available
+if [ ! -d "$UUID_ARCHIVE_PATH" ]; then
+  echo "Archive path unavailable. Set UUID_ARCHIVE_PATH=$UUID_ARCHIVE_PATH to somewhere else that exists." >&2
+  exit 1
+fi
 
 source_file="$1"
 

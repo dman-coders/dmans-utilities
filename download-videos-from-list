@@ -15,5 +15,4 @@ fi
 cat $list_file | while read url
 do
   echo "should download $url"
-
 done

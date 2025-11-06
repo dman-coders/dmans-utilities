@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 
+# For when a significant library has been built as part of a larger project
+# But needs to be split off to become its own entity.
+# Such as developing a module within a Drupal website, and at some point
+# Deciding to branch the module off and use it as a dependency instead.
+
 # Usage:
 # 	./git_move.sh git@repo_site.com:/my_repo.git origin/folder/path/ /destination/repo/path/ new/folder/path/  
 

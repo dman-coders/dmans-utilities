@@ -69,7 +69,7 @@ function parallalProcessFiles {
     export -f processFile;
     # Additional options `-print0` & `-0` are here to manage spaces in filenames.
     # -P 4 is parallalization.
-    find "$@" -type f -print0 | xargs -0 -P 4 -n 1 -I{} bash -c 'processFile "$1"' _ "{}"
+    find "$@" -type f -print0 | xargs --null --max-procs=4 --replace={} bash -c 'processFile "$1"' _ "{}"
 }
 
 # Call the processFiles function with the provided arguments

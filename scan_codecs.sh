@@ -1,4 +1,6 @@
 #!/bin/zsh
+# Try to figure out what's going on with this video
+
 echo '{';
 find . -type f \( -iname '*.mp4' -o -iname '*.mov' \) | while read -r file; do
   json=$(ffprobe -v error -print_format json \

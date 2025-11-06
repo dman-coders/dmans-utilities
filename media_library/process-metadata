@@ -61,17 +61,20 @@ function processFile {
     # As it seems that Adobe Bridge does not recognise uuid
     exiftool ${exif_option} -ImageSupplierImageID=$uuid "${source_file}";
 
-    # Extract the kMDItemWhereFroms metadata
-    # very naive string munging.
-    # WARNING - JPEGs seem to only allow 32 chars in these metadata fields!
-    # so we use the -m flag to force it.
-    local wherefroms=$(mdls --raw -name kMDItemWhereFroms "${source_file}" | tr -d '\n' | sed -E  's/[^"]*"([^"]*)".*/\1/')
-    if [[ -z $wherefroms || $wherefroms == "(null)" ]]; then
-        echo "Provenance (kMDItemWhereFroms) metadata is empty for '${source_file}'" >&2
-    else
-      echo "Setting the source for '${source_file}' to : $wherefroms" >&2
-      # Set the EXIF metadata
-      exiftool -m ${exif_option} "${source_file}" -XMP:Identifier="$wherefroms" -XMP-dc:Source="$wherefroms" -IPTC:Source="$wherefroms"
+    // OSX filesystem annotation stuff.
+    if command -v mdls &>/dev/null; then
+      # Extract the kMDItemWhereFroms metadata
+      # very naive string munging.
+      # WARNING - JPEGs seem to only allow 32 chars in these metadata fields!
+      # so we use the -m flag to force it.
+      local wherefroms=$(mdls --raw -name kMDItemWhereFroms "${source_file}" | tr -d '\n' | sed -E  's/[^"]*"([^"]*)".*/\1/')
+      if [[ -z $wherefroms || $wherefroms == "(null)" ]]; then
+          echo "Provenance (kMDItemWhereFroms) metadata is empty for '${source_file}'" >&2
+      else
+        echo "Setting the source for '${source_file}' to : $wherefroms" >&2
+        # Set the EXIF metadata
+        exiftool -m ${exif_option} "${source_file}" -XMP:Identifier="$wherefroms" -XMP-dc:Source="$wherefroms" -IPTC:Source="$wherefroms"
+      fi
     fi
 
     # If the filename looks like something descriptive,
@@ -92,15 +95,6 @@ function processFile {
       fi
     fi
 
-#    # If we are in a subdirectory
-#    # add the subdirname as a keyword tag
-#    local rp=$(realpath "$source_file")
-#    local dn=$(dirname "$rp")
-#    local subdir=$(basename "$dn")
-#    # exiftool wierdness to avoid duplicate tagging.
-#    exiftool ${exif_option} "${source_file}" -XMP:Subject-="$subdir" -XMP:Subject+="$subdir"
-#    # Subject works, and is what Bridge uses. Keywords does not seem to be a tag that is retained?
-#    echo "Added keyword '$subdir' to '$source_file'." >&2
     process-dirname-as-keyword "$source_file"
 
     return 0
@@ -121,12 +115,10 @@ function processFiles {
 }
 
 function parallalProcessFiles {
-    # Find all files recursively in the input arguments.
+    # Process all files recursively in the input arguments.
     # This uses parallal processing - note that feedback from the sub-processes may get jumpbled.
     export -f processFile;
-    # Additional options `-print0` & `-0` are here to manage spaces in filenames.
-    # -P 4 is parallalization.
-    find "$@" -type f -print0 | xargs -0 -P 4 -n 1 -I{} bash -c 'processFile "$1"' _ "{}"
+    find "$@" -type f -print0 | xargs --null --max-procs=4 --replace={} bash -c 'processFile "$1"' _ "{}"
 }
 
 # Call the processFiles function with the provided arguments
