@@ -42,21 +42,35 @@ function processFile {
         local uuid=$(exiftool -uuid -s -s -s "${source_file}")
         if [[ -n "$uuid" ]]; then
             echo "Looking for UUID $uuid to scrape metadata from." >&2
-            target_file=$(fetch-version-from-uuid-archive "${source_file}")
+            archive_file=$(fetch-version-from-uuid-archive "${source_file}")
+            if [[ -f $archive_file ]] ; then
+              target_file="$archive_file"
+            fi
         fi
     fi
     if [[ ! -f "${target_file}" ]]; then
-        echo "No '$target_file' to scrape metadata from." >&2
+        echo "No target file '${target_file}' to scrape metadata for '${source_file}' from." >&2
         return 1
     fi
 
     echo "Duplicating metadata from '$target_file' to '$source_file'."  >&2
-    # Not all, just the UUID.
-    exiftool $exif_option -tagsFromFile "$target_file" "-UUID>UUID" -overwrite_original "$source_file"
-    exiftool $exif_option -tagsFromFile "$target_file" "-Source>Source" "$source_file"
-    exiftool $exif_option -tagsFromFile "$target_file" "-Identifier>Identifier" "$source_file"
-    exiftool $exif_option -tagsFromFile "$target_file" "-Description>Description" "$source_file"
-    exiftool $exif_option -tagsFromFile "$target_file" "-Subject>Subject" "$source_file"
+    # Not all, just selected useful fields.
+    exiftool $exif_option -tagsFromFile "$target_file" "-UUID>UUID" "$source_file"
+
+    #exiftool $exif_option -tagsFromFile "$target_file" "-Source>Source" "$source_file"
+    #exiftool $exif_option -tagsFromFile "$target_file" "-Identifier>Identifier" "$source_file"
+    #exiftool $exif_option -tagsFromFile "$target_file" "-Description>Description" "$source_file"
+    #exiftool $exif_option -tagsFromFile "$target_file" "-Subject>Subject" "$source_file"
+
+    # All tagnames can be found using  `exiftool -s`
+    TAGS=( Source Identifier Description Subject Keywords HierarchicalSubject Categories CatalogSets TagsList ImageDescription)
+    tags_to_copy=()
+    for tag in "${TAGS[@]}"; do
+      tags_to_copy+=("-${tag}>${tag}")
+    done
+    exiftool -q $exif_option -tagsFromFile "$target_file" \
+      "${tags_to_copy[@]}" \
+      "$source_file"
 
     echo "Updated EXIF metadata on $source_file" >&2
 

@@ -1,4 +1,8 @@
 #!/bin/bash
+# process-dirname-as-keyword
+# For all files given as arguments
+# If we are in a subdirectory
+# add the subdirname as a keyword tag
 
 function processFile {
     local exif_option="-quiet -overwrite_original"
@@ -7,16 +11,14 @@ function processFile {
         echo "Error: $source_file is not a file"
         return 1
     fi
-    # If we are in a subdirectory
-    # add the subdirname as a keyword tag
     local rp=$(realpath "$source_file")
     local dn=$(dirname "$rp")
     local subdir=$(basename "$dn")
-    # exiftool wierdness to avoid duplicate tagging.
+    # exiftool wierdness to avoid duplicate tagging. Delete and set the tag.
     exiftool ${exif_option} "${source_file}" -XMP:Subject-="$subdir" -XMP:Subject+="$subdir"
     # exiftool ${exif_option} "${source_file}" -Keywords-="$subdir" -Keywords+="$subdir"
     # XMP:Subject works, and is what Bridge uses. Keywords does not seem to be a tag that is retained?
-    echo "Added keyword '$subdir' to '$source_file'." >&2
+    echo "Added keyword from directory  '$subdir' to '$source_file'." >&2
     return 0
 }
 

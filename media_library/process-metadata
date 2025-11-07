@@ -61,8 +61,8 @@ function processFile {
     # As it seems that Adobe Bridge does not recognise uuid
     exiftool ${exif_option} -ImageSupplierImageID=$uuid "${source_file}";
 
-    // OSX filesystem annotation stuff.
-    if command -v mdls &>/dev/null; then
+    # OSX filesystem annotation stuff.
+    if command -v mdls &> /dev/null; then
       # Extract the kMDItemWhereFroms metadata
       # very naive string munging.
       # WARNING - JPEGs seem to only allow 32 chars in these metadata fields!
