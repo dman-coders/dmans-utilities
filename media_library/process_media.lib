@@ -6,13 +6,17 @@ UTIL_DIR=${UTIL_DIR:-~/.media_processing}
 mkdir -p "$UTIL_DIR"
 
 log_notice(){
-  echo "$1"
+  echo "$1"  >&2
 }
 log_debug(){
-  printf "\033[93m$1\033[0m\n"
+  printf "\033[93m$1\033[0m\n"  >&2
+}
+log_error(){
+  printf "\033[31m$1\033[0m\n" >&2
 }
 
-MEDIA_DB="$UTIL_DIR/media.sqlite"
+MEDIA_DB="${MEDIA_DB:-${UTIL_DIR}/media.sqlite}"
+log_notice "MEDIA_DB=$MEDIA_DB"
 
 create_database(){
   echo ".open $MEDIA_DB" | sqlite3
@@ -43,21 +47,6 @@ drop_database(){
   log_notice "Dropped database $MEDIA_DB"
 }
 
-
-# Check if the database file exists and is a valid SQLite database
-if [ ! -f "$MEDIA_DB" ]; then
-  log_notice "Database file does not exist. Creating it..."
-  create_database;
-else
-  # Check if it's a valid SQLite database by trying to run a simple query
-  if ! echo ".tables" | sqlite3 "$MEDIA_DB" &>/dev/null; then
-    log_notice "Database file exists but appears to be invalid. Recreating it..."
-    drop_database;
-    create_database;
-  else
-    log_notice "Database file exists and is valid."
-  fi
-fi
 
 
 # Check if a tag exists in the database, and create it if not
@@ -182,6 +171,14 @@ dump_tags(){
   done
 }
 
+dump_db() {
+  tables=( $(echo ".tables" | sqlite3 "$MEDIA_DB" ) )
+  for table in "${tables[@]}"; do
+    echo -e "\nTable: $table"
+    SQL="SELECT * FROM $table;"
+    echo "$SQL" | sqlite3 -column -header  "$MEDIA_DB"
+  done
+}
 
 # Update the tag hierarchy based on tag names with slashes
 # Tags with slashes in their names will have their parent set to the leftmost parts
@@ -328,7 +325,29 @@ display_child_tags(){
       display_synonyms "$tag_name" "${indent}  "
 
       # Recursively display this child's children with increased indentation
-      display_child_tags "$tag_name" "${indent}"
+      display_child_tags "$tag_name" "${indent}${indent}"
     done
   fi
 }
+
+# Require sqlite3 or die
+if ! command -v sqlite3 >/dev/null 2>&1; then
+  log_error "sqlite3 is required"
+  exit 1
+fi
+
+# Check if the database file exists and is a valid SQLite database
+if [ ! -f "$MEDIA_DB" ]; then
+  log_notice "Database file does not exist. Creating it..."
+  create_database;
+else
+  # Check if it's a valid SQLite database by trying to run a simple query
+  if ! echo ".tables" | sqlite3 "$MEDIA_DB" &>/dev/null; then
+    log_notice "Database file exists but appears to be invalid. Recreating it..."
+    drop_database;
+    create_database;
+  else
+    log_notice "Database file exists and is valid."
+  fi
+fi
+

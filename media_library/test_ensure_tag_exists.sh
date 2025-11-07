@@ -60,4 +60,12 @@ else
   echo "FAIL: Synonym 'synonym_for_new_tag' was not created"
 fi
 
+
+ensure_tag_exists mammal container
+ensure_tag_exists feline container mammal
+ensure_tag_exists cat leaf feline
+ensure_tag_exists lion leaf feline
+ensure_tag_exists canine container mammal
+ensure_tag_exists wolf leaf canine
+
 echo "Testing complete."
