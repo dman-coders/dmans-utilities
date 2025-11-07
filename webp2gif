@@ -1,0 +1,22 @@
+#!/bin/bash
+
+# Check if the user provided a directory as a command-line argument
+if [ -z "$1" ]; then
+  echo "Please provide a directory to convert"
+  exit 1
+fi
+
+# Use find to locate all WebP files in the directory and its subdirectories
+find "$1" -type f -name '*.webp' -print0 | while read -d $'\0' file
+do
+  # Use mogrify to convert the WebP file to GIF
+  gif_version="${file%.*}.gif"
+  if [[ ! -f "${gif_version}" ]]; then
+    mogrify -format gif "$file"
+    echo "Created gif version ${gif_version}" >&2
+  else
+    echo "gif version of '${gif_version}' already exists." >&2
+  fi
+
+done
+
