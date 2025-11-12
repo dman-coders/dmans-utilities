@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+
+curl -s -H "Authorization: MediaBrowser Token=\"$JELLYFIN_API_KEY\"" \
+     "http://$JELLYFIN_HOST:$JELLYFIN_PORT/Items?IncludeItemTypes=BoxSet&Recursive=true&UserId=$JELLYFIN_USERID&Fields=Path,ParentId" \
+     | jq '.Items | map({Name, Id, ParentId, ItemCount: .RecursiveItemCount, Path})'

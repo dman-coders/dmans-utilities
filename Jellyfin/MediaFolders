@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+
+curl -s -H "Authorization: MediaBrowser Token=\"$JELLYFIN_API_KEY\"" \
+     http://$JELLYFIN_HOST:$JELLYFIN_PORT/Library/MediaFolders \
+     | jq '.Items | map([.Name, .CollectionType, .Type, .LocationType, .Path])'

@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+curl -vv -H "Authorization: MediaBrowser Token=\"$JELLYFIN_API_KEY\"" \
+     http://$JELLYFIN_HOST:$JELLYFIN_PORT
