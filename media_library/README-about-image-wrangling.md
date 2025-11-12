@@ -40,3 +40,13 @@ For cases where a new gif was generated, read the exif from the webp and apply i
 ### `move-file-to-uuid-archive`
 
 Archive the webp files into a storage area where they are indexed by UUID.
+
+## Concepts
+
+### Heirarchical tagging
+
+The heirarchical tag system comes with an annotation that says if a tag is a Container (organizational only) or a Leaf (actual data).
+In the case of a heirarchical tag like `Location/Inside/Bedroom` the `Location` is only organizational. 
+If the tags had to be flattened, that tag wouls become two bits of information: ['Inside, 'Bedroom'] but not `Location` as that provides no information.
+Just like `Gender/Male` would only flatten to `Male`.
+On the other hand, `Sports/Polo` would probably collapse into both [`Sports`, `Polo`] when relevant.
