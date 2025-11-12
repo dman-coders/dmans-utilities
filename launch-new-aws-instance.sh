@@ -1,4 +1,5 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
 
 export EC2_KEYPAIR=dmanAWS    # THIS will be different for you
 export EC2_KEYPAIR_FILE=~/.ec2/${EC2_KEYPAIR}.pem

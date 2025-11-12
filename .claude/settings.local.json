@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cat:*)",
+      "WebFetch(domain:granite.local)",
+      "Bash(source .env)",
+      "Bash(curl:*)",
+      "Bash(python3:*)",
+      "Bash(chmod:*)",
+      "Bash(./ListCollections)",
+      "Bash(./CreateCollection:*)",
+      "Bash(exiftool:*)",
+      "Bash(./test-tags-sample.sh:*)",
+      "Bash(./test-process-tags-to-db.sh:*)",
+      "Bash(TESTFILE=\"/Volumes/dman/bin/dmans-utilities/media_library/tests/fixtures/test-image.jpg\")"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

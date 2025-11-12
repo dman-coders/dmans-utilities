@@ -1,4 +1,5 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
 # From https://lostechies.com/johnteague/2014/04/04/using-git-subtrees-to-split-a-repository/
 
 # Take an existing Drupal submodule and split it into its own repository.

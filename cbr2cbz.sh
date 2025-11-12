@@ -1,4 +1,5 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
 
 # As cbr is deprecated by the more advanced comic book readers, old
 # .cbr or .rar archives should be re-packed as zips.

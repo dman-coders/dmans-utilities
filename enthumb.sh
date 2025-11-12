@@ -1,4 +1,5 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
 
 # Given a cbz, cbr, tar or zip,
 # unpack it enough to find an image

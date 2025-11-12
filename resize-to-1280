@@ -1,4 +1,5 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
 
 # If your image folder is too big,
 # and you really don't have to keep the originalt at 400DPI for web use,

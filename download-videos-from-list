@@ -1,4 +1,5 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
 
 # Given the location of a manifest file containing URLs,
 # Iterate the list and use yt-dlp to extract the video

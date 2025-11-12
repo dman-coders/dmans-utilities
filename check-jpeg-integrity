@@ -1,4 +1,5 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
 #
 # Run this in the current directory and any corrupt jpegs should throw a little message.
 # OK run is silent

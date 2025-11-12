@@ -1,4 +1,5 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
 
 # A droptarget file.
 # use to add arbitrary exif tags to a given file.

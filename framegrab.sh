@@ -1,4 +1,5 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
 
 # Given a video, grab a frame from it
 # then munge it artistically to serve as a background for media player.

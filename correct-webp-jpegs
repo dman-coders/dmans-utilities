@@ -1,4 +1,5 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
 
 # Some webp images are actually jpegs, and need to be renamed so things are less confusing
 

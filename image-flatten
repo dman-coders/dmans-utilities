@@ -1,4 +1,5 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
 
 # Makes whites whiter and darks darker.
 # Use this on simple black & white scans to remove paper texture and make the ink 100% black.

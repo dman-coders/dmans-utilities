@@ -1,4 +1,5 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
 # Usage: ./force_dar_passthrough.sh input.mp4
 
 input="$1"

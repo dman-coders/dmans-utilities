@@ -1,4 +1,5 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
 
 # Given a file, list of files, or directory, including images,
 # Process them all by:
