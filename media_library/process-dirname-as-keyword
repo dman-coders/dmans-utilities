@@ -1,4 +1,7 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
+source "$(dirname "$0")/process_media.lib"
+
 # process-dirname-as-keyword
 # For all files given as arguments
 # If we are in a subdirectory
@@ -20,12 +23,6 @@ function processFile {
     # XMP:Subject works, and is what Bridge uses. Keywords does not seem to be a tag that is retained?
     echo "Added keyword from directory  '$subdir' to '$source_file'." >&2
     return 0
-}
-
-# Calls the processFile function on all arguments.
-function parallalProcessFiles {
-    export -f processFile;
-    find "$@" -type f -print0 | xargs --null --max-procs=4 --replace={} bash -c 'processFile "$1"' _ "{}"
 }
 
 # Call the processFiles function with the provided arguments

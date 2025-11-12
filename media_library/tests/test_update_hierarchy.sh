@@ -1,4 +1,5 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
 
 # Source the library to initialize the database
 source process_media.lib
@@ -16,19 +17,19 @@ echo "Creating tags with slashes in their names..."
 
 # Create some tags with slashes
 ensure_tag_exists "Location" "container"
-ensure_tag_exists "Location/Inside"
-ensure_tag_exists "Location/Outside"
-ensure_tag_exists "Location/Inside/Bedroom" "leaf"
-ensure_tag_exists "Location/Inside/Kitchen" "leaf"
-ensure_tag_exists "Location/Outside/Garden" "leaf"
-ensure_tag_exists "Animals/Mammals/Dog" "leaf"
-ensure_tag_exists "Animals/Mammals/Cat" "leaf"
-set_synonym_for "Animals/Mammals/Cat" "pussy"
-ensure_tag_exists "Animals/Mammals/squirrel"
-ensure_tag_exists "Animals/Mammals/Bear"
+ensure_tag_exists "Location|Inside"
+ensure_tag_exists "Location|Outside"
+ensure_tag_exists "Location|Inside|Bedroom" "leaf"
+ensure_tag_exists "Location|Inside|Kitchen" "leaf"
+ensure_tag_exists "Location|Outside|Garden" "leaf"
+ensure_tag_exists "Animals|Mammals|Dog" "leaf"
+ensure_tag_exists "Animals|Mammals|Cat" "leaf"
+set_synonym_for "Animals|Mammals|Cat" "pussy"
+ensure_tag_exists "Animals|Mammals|squirrel"
+ensure_tag_exists "Animals|Mammals|Bear"
 
-ensure_tag_exists "Animals/Birds/Eagle" "leaf"
-set_synonym_for "Animals/Birds/Eagle" "falcon"
+ensure_tag_exists "Animals|Birds|Eagle" "leaf"
+set_synonym_for "Animals|Birds|Eagle" "falcon"
 
 # Create some tags without slashes
 ensure_tag_exists "Person" "container"
@@ -54,7 +55,7 @@ echo "$SQL" | sqlite3 "$MEDIA_DB"
 
 # Verify that parent tags exist
 echo "Verifying that parent tags exist..."
-SQL="SELECT name FROM tags WHERE name IN ('Location', 'Animals', 'Animals/Mammals', 'Animals/Birds', 'Location/Inside', 'Location/Outside');"
+SQL="SELECT name FROM tags WHERE name IN ('Location', 'Animals', 'Animals|Mammals', 'Animals|Birds', 'Location|Inside', 'Location|Outside');"
 echo "$SQL" | sqlite3 "$MEDIA_DB"
 
 echo "Testing complete."

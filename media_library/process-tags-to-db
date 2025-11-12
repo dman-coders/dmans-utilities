@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+
+source "$(dirname "$0")/process_media.lib"
+
+# Extract tags from media files and ensure they exist in the database.
+#
+# Given file(s) or directories, this script:
+# - Extracts tags from EXIF metadata fields (Subject, Keywords, HierarchicalSubject, etc.)
+# - Parses hierarchical tags (slash-separated paths)
+# - Ensures all tags exist in the media database with proper parent-child relationships
+# - Counts and reports on tags found
+#
+# This does NOT store file-to-tag associations yet - just builds the tag hierarchy.
+
+processFile() {
+    local source_file="$1"
+
+    if [[ ! -f "${source_file}" ]]; then
+        log_error "Error: $source_file is not a file"
+        return 1
+    fi
+
+    # Check if this is actually a media file with EXIF support
+    local mime_type=$(exiftool -s -S -MimeType "${source_file}" 2>/dev/null)
+    if [[ -z "$mime_type" ]]; then
+        log_debug "Skipping $source_file (no EXIF support)"
+        return 0
+    fi
+
+    log_notice "Processing: $source_file"
+
+    # Extract all tag fields from the file
+    local all_tags=()
+
+    # Tag fields to extract from EXIF metadata
+    # Based on what Adobe Bridge and other tools use
+    local tag_fields=( Subject Keywords HierarchicalSubject Categories CatalogSets TagsList )
+
+    for field in "${tag_fields[@]}"; do
+        # Extract the field value(s) - exiftool may return multiple values
+        local field_values=$(exiftool -s -s -s "-${field}" "${source_file}" 2>/dev/null)
+
+        if [[ -n "$field_values" ]]; then
+            # Split by newlines and commas (exiftool uses both for multiple values)
+            while IFS= read -r line; do
+                # Split by comma as well
+                IFS=',' read -ra items <<< "$line"
+                for item in "${items[@]}"; do
+                    # Trim whitespace
+                    item=$(echo "$item" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+                    if [[ -n "$item" ]]; then
+                        all_tags+=("$item")
+                    fi
+                done
+            done <<< "$field_values"
+        fi
+    done
+
+    # Remove duplicates and process each unique tag
+    local unique_tags=($(printf '%s\n' "${all_tags[@]}" | sort -u))
+
+    if [[ ${#unique_tags[@]} -eq 0 ]]; then
+        log_debug "  No tags found in $source_file"
+        return 0
+    fi
+
+    log_notice "  Found ${#unique_tags[@]} unique tag(s)"
+
+    # Process each tag
+    for tag in "${unique_tags[@]}"; do
+        process_tag "$tag"
+    done
+
+    return 0
+}
+
+# Process a single tag and ensure it exists in the database
+# Handles hierarchical tags (with slashes) by ensuring all parent tags exist
+process_tag() {
+    local tag="$1"
+
+    # Check if this is a hierarchical tag (contains slashes)
+    if [[ "$tag" == *"/"* ]]; then
+        log_debug "    Hierarchical tag: $tag"
+
+        # For hierarchical tags, ensure_tag_exists handles the recursion
+        # It will create all parent tags as containers automatically
+        local parent=$(parse_parent_of "$tag")
+        ensure_tag_exists "$tag" "leaf" "$parent"
+    else
+        # Simple flat tag
+        log_debug "    Flat tag: $tag"
+        ensure_tag_exists "$tag" "leaf"
+    fi
+}
+
+# Export library functions needed by processFile in subprocess
+export -f log_notice
+export -f log_debug
+export -f log_error
+export -f ensure_tag_exists
+export -f parse_parent_of
+export -f process_tag
+
+# Export variables needed by subprocess
+export MEDIA_DB
+
+# Main execution
+log_notice "========================================="
+log_notice "Processing media files to extract tags"
+log_notice "========================================="
+
+# Count initial tags
+initial_count=$(echo "SELECT COUNT(*) FROM tags;" | sqlite3 "$MEDIA_DB")
+log_notice "Initial tag count: $initial_count"
+
+# Process all files
+parallalProcessFiles "$@"
+
+# Count final tags
+final_count=$(echo "SELECT COUNT(*) FROM tags;" | sqlite3 "$MEDIA_DB")
+new_tags=$((final_count - initial_count))
+
+log_notice "========================================="
+log_notice "Processing complete!"
+log_notice "Initial tags: $initial_count"
+log_notice "Final tags: $final_count"
+log_notice "New tags added: $new_tags"
+log_notice "========================================="
+
+# Show the tag hierarchy
+if [[ $new_tags -gt 0 ]]; then
+    log_notice ""
+    log_notice "Tag hierarchy:"
+    dump_tags
+fi

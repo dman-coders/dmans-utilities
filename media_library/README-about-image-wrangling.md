@@ -5,11 +5,12 @@ Given:
 
 A folder or subfolder full of downloaded images, some as webp.
 
-Extract the provenance data, 
-Stamp the files with index info so we can find the originals later
-Generate derivatives we can work with
-File the originals away somewhere safe
+Extract the provenance data.
+Stamp the files with index info so we can find the originals later.
+Generate derivatives we can work with.
+File the originals away somewhere safe.
 
+Advanced usage includes a local database of tags, and process for managing them.
 
 ## `Process-clips`
 
@@ -50,3 +51,6 @@ In the case of a heirarchical tag like `Location/Inside/Bedroom` the `Location` 
 If the tags had to be flattened, that tag wouls become two bits of information: ['Inside, 'Bedroom'] but not `Location` as that provides no information.
 Just like `Gender/Male` would only flatten to `Male`.
 On the other hand, `Sports/Polo` would probably collapse into both [`Sports`, `Polo`] when relevant.
+
+## Database
+

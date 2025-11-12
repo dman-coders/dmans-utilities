@@ -1,4 +1,5 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
 
 # utilities re-used by the media processing tools
 
@@ -25,7 +26,11 @@ create_database(){
   # Create all tables at once with foreign key constraints
   SQL="PRAGMA foreign_keys = ON;
   CREATE TABLE tag_types (type TEXT PRIMARY KEY);
-  CREATE TABLE tags (name TEXT PRIMARY KEY, type TEXT, parent TEXT,
+  CREATE TABLE tags (
+    name TEXT PRIMARY KEY,
+    longname TEXT KEY,
+    type TEXT,
+    parent TEXT,
     FOREIGN KEY (type) REFERENCES tag_types(type),
     FOREIGN KEY (parent) REFERENCES tags(name));
   CREATE TABLE synonyms (synonym TEXT PRIMARY KEY, canonic TEXT,
@@ -328,6 +333,17 @@ display_child_tags(){
       display_child_tags "$tag_name" "${indent}${indent}"
     done
   fi
+}
+
+# Parallel file processing utility
+# Processes all files recursively in the input arguments using parallel execution.
+# Expects the caller to define a 'processFile' function and export any additional
+# functions needed (e.g., export -f processWebpFile if processFile depends on it).
+# Note: Feedback from sub-processes may get jumbled due to parallel execution.
+# Note: Uses BSD xargs syntax (macOS) - -0: null-separated, -P: parallel, -I: replace
+parallalProcessFiles() {
+    export -f processFile;
+    find "$@" -type f -print0 | xargs -0 -P 4 -I {} bash -c 'processFile "$1"' _ "{}"
 }
 
 # Require sqlite3 or die

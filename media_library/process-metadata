@@ -1,4 +1,6 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
+source "$(dirname "$0")/process_media.lib"
 
 # Serialize provenance of a file into portable embedded metadata.
 
@@ -112,13 +114,6 @@ function processFiles {
             processFile "$file"
         fi
     done
-}
-
-function parallalProcessFiles {
-    # Process all files recursively in the input arguments.
-    # This uses parallal processing - note that feedback from the sub-processes may get jumpbled.
-    export -f processFile;
-    find "$@" -type f -print0 | xargs --null --max-procs=4 --replace={} bash -c 'processFile "$1"' _ "{}"
 }
 
 # Call the processFiles function with the provided arguments

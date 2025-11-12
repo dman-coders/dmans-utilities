@@ -1,4 +1,5 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
 # Generate a hash of an image, irrespective of metadata.
 # When given a single filename as an argument of any image type,
 # convert that into a 'clean' image of the same format

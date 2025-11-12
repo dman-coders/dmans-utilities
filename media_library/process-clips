@@ -1,4 +1,6 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
+source "$(dirname "$0")/process_media.lib"
 
 # Do a lot of steps to tag, sort, and catalog webp images.
 
@@ -85,15 +87,8 @@ function processWebpFile {
     fi
 }
 
-function parallalProcessFiles {
-    # Find all files recursively in the input arguments.
-    # This uses parallal processing - note that feedback from the sub-processes may get jumpbled.
-    export -f processFile;
-    export -f processWebpFile;
-    # Additional options `-print0` & `-0` are here to manage spaces in filenames.
-    # -P 4 is parallalization.
-    find "$@" -type f -print0 | xargs --null --max-procs=4 --replace={} bash -c 'processFile "$1"' _ "{}"
-}
+# Export additional function needed by processFile
+export -f processWebpFile;
 
 # Call the processFiles function with the provided arguments
 parallalProcessFiles "$@"

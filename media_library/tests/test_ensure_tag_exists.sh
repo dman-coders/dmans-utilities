@@ -1,4 +1,5 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
 
 # Source the library to initialize the database
 source process_media.lib
@@ -60,8 +61,8 @@ else
   echo "FAIL: Synonym 'synonym_for_new_tag' was not created"
 fi
 
-
-ensure_tag_exists mammal container
+ensure_tag_exists Animals container
+ensure_tag_exists mammal container Animals
 ensure_tag_exists feline container mammal
 ensure_tag_exists cat leaf feline
 ensure_tag_exists lion leaf feline

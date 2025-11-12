@@ -1,4 +1,5 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
 
 # Given a gif file, look for a matching webp file,
 # and if found, duplicate its metadata into the gif.
