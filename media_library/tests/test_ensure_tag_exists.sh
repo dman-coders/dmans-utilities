@@ -4,7 +4,7 @@
 # Source the library to initialize the database
 source process_media.lib
 
-echo "Testing ensure_tag_exists and set_synonym_for functions..."
+echo "Testing ensure_tag_exists and set_synonym functions..."
 
 # Test 1: Use ensure_tag_exists directly
 echo "Test 1: Using ensure_tag_exists for a new tag..."
@@ -38,15 +38,15 @@ else
   echo "FAIL: Tag 'custom_type_tag' was not created"
 fi
 
-# Test 3: Use set_synonym_for with a new tag
-echo "Test 3: Using set_synonym_for with a new tag..."
-set_synonym_for "another_new_tag" "synonym_for_new_tag"
+# Test 3: Use set_synonym with a new tag
+echo "Test 3: Using set_synonym with a new tag..."
+set_synonym "another_new_tag" "synonym_for_new_tag"
 
 # Verify the tag was created
 SQL="SELECT name FROM tags WHERE name='another_new_tag';"
 result=$(echo "$SQL" | sqlite3 "$MEDIA_DB")
 if [ -n "$result" ]; then
-  echo "PASS: Tag 'another_new_tag' was created automatically by set_synonym_for"
+  echo "PASS: Tag 'another_new_tag' was created automatically by set_synonym"
 else
   echo "FAIL: Tag 'another_new_tag' was not created"
 fi

@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 
-
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export MEDIA_DB="$SCRIPT_DIR/test.sqlite"
 # Source the library to initialize the database
-source process_media.lib
+source "$SCRIPT_DIR/../process_media.lib"
 
 echo "Testing update_tag_hierarchy function..."
 
@@ -12,26 +13,27 @@ drop_database
 # Create a new database
 create_database
 
-# Create tags with slashes in their names
-echo "Creating tags with slashes in their names..."
+# Create tags with pipe delimiters in their names (using standard model)
+echo "Creating tags with pipe delimiters in their names..."
 
-# Create some tags with slashes
-ensure_tag_exists "Location" "container"
-ensure_tag_exists "Location|Inside"
-ensure_tag_exists "Location|Outside"
-ensure_tag_exists "Location|Inside|Bedroom" "leaf"
-ensure_tag_exists "Location|Inside|Kitchen" "leaf"
-ensure_tag_exists "Location|Outside|Garden" "leaf"
-ensure_tag_exists "Animals|Mammals|Dog" "leaf"
-ensure_tag_exists "Animals|Mammals|Cat" "leaf"
-set_synonym_for "Animals|Mammals|Cat" "pussy"
-ensure_tag_exists "Animals|Mammals|squirrel"
-ensure_tag_exists "Animals|Mammals|Bear"
+# Locations hierarchy with pipe notation
+ensure_tag_exists "Locations|Indoors|Bedroom" "leaf"
+ensure_tag_exists "Locations|Indoors|Kitchen" "leaf"
+ensure_tag_exists "Locations|Indoors|Lounge" "leaf"
+ensure_tag_exists "Locations|Outdoor|Park" "leaf"
 
+# Animal taxonomy with pipe notation
+ensure_tag_exists "Animals|Mammals|Canine|Dog" "leaf"
+set_synonym "Animals|Mammals|Canine|Dog" "Doggy"
+ensure_tag_exists "Animals|Mammals|Feline|Cat" "leaf"
+set_synonym "Animals|Mammals|Feline|Cat" "Pussy"
+ensure_tag_exists "Animals|Mammals|Feline|Lion" "leaf"
+ensure_tag_exists "Animals|Mammals|Equine|Horse" "leaf"
 ensure_tag_exists "Animals|Birds|Eagle" "leaf"
-set_synonym_for "Animals|Birds|Eagle" "falcon"
+ensure_tag_exists "Animals|Birds|Penguin" "leaf"
+set_synonym "Animals|Birds" "Aves"
 
-# Create some tags without slashes
+# Create some tags without delimiters
 ensure_tag_exists "Person" "container"
 ensure_tag_exists "Event" "container"
 
@@ -55,7 +57,8 @@ echo "$SQL" | sqlite3 "$MEDIA_DB"
 
 # Verify that parent tags exist
 echo "Verifying that parent tags exist..."
-SQL="SELECT name FROM tags WHERE name IN ('Location', 'Animals', 'Animals|Mammals', 'Animals|Birds', 'Location|Inside', 'Location|Outside');"
+SQL="SELECT name FROM tags WHERE name IN ('Locations', 'Animals', 'Animals|Mammals', 'Animals|Birds', 'Locations|Indoors', 'Locations|Outdoor', 'Animals|Mammals|Canine', 'Animals|Mammals|Feline');"
 echo "$SQL" | sqlite3 "$MEDIA_DB"
 
+echo ""
 echo "Testing complete."

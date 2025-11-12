@@ -48,7 +48,7 @@ if [[ ! -f "$TESTFILE" ]]; then
     echo -n -e "$JPEG_DATA" > "$TESTFILE"
     # Add various tags using exiftool
     exiftool -overwrite_original \
-      -Subject="A Dog" \
+      -Subject="Dog" \
       -Keywords="Dog" \
       -HierarchicalSubject="Animals|Mammals|Canine|Dog" \
       "$TESTFILE" >/dev/null 2>&1

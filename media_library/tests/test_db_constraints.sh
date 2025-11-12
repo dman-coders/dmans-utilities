@@ -44,20 +44,20 @@ else
   echo "FAIL: Failed to insert a synonym with a valid canonic tag"
 fi
 
-# Test 5: Use the set_synonym_for function (should fail with non-existent tag)
-echo "Test 5: Using set_synonym_for with non-existent tag..."
-if set_synonym_for "non_existent_tag" "another_synonym" 2>/dev/null; then
-  echo "FAIL: set_synonym_for succeeded with non-existent tag, but should have failed"
+# Test 5: Use the set_synonym function (should fail with non-existent tag)
+echo "Test 5: Using set_synonym with non-existent tag..."
+if set_synonym "non_existent_tag" "another_synonym" 2>/dev/null; then
+  echo "FAIL: set_synonym succeeded with non-existent tag, but should have failed"
 else
-  echo "PASS: set_synonym_for correctly failed with non-existent tag"
+  echo "PASS: set_synonym correctly failed with non-existent tag"
 fi
 
-# Test 6: Use the set_synonym_for function with a valid tag (should succeed)
-echo "Test 6: Using set_synonym_for with a valid tag..."
-if set_synonym_for "test_tag" "another_synonym" 2>/dev/null; then
-  echo "PASS: set_synonym_for succeeded with a valid tag"
+# Test 6: Use the set_synonym function with a valid tag (should succeed)
+echo "Test 6: Using set_synonym with a valid tag..."
+if set_synonym "test_tag" "another_synonym" 2>/dev/null; then
+  echo "PASS: set_synonym succeeded with a valid tag"
 else
-  echo "FAIL: set_synonym_for failed with a valid tag"
+  echo "FAIL: set_synonym failed with a valid tag"
 fi
 
 echo "Testing complete."
