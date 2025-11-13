@@ -28,7 +28,8 @@ create_database(){
   log_notice "Initializing database $MEDIA_DB"
 
   # Create all tables at once with foreign key constraints
-  # For most lookups, use long_name by preference, then fall back to name.
+  # name is the primary key and used for all foreign key relationships
+  # long_name is a cosmetic/convenience field for display and hierarchy definition
   SQL="PRAGMA foreign_keys = ON;
   CREATE TABLE tag_types (type TEXT PRIMARY KEY);
   CREATE TABLE tags (
@@ -37,10 +38,10 @@ create_database(){
     type TEXT,
     parent TEXT,
     FOREIGN KEY (type) REFERENCES tag_types(type),
-    FOREIGN KEY (parent) REFERENCES tags(long_name));
+    FOREIGN KEY (parent) REFERENCES tags(name));
   CREATE TABLE synonyms (synonym TEXT PRIMARY KEY, canonic TEXT,
-    FOREIGN KEY (canonic) REFERENCES tags(long_name));"
-  echo "$SQL" | sqlite3 "$MEDIA_DB"
+    FOREIGN KEY (canonic) REFERENCES tags(name));"
+  echo "$SQL" | sqlite3 "$MEDIA_DB" || log_error "$SQL"
   log_notice "Created tables in database $MEDIA_DB"
 
   # Insert initial data
@@ -57,8 +58,9 @@ drop_database(){
   log_notice "Dropped database $MEDIA_DB"
 }
 
-# Will search for a tag by canonic long_name, name, or synonym.
+# Will search for a tag by name, or synonym.
 # returns a csv listing "name, long_name, type, parent"
+# That has to be parsed by the caller.
 get_tag_data(){
   tag_name=$1
   long_name=$tag_name
@@ -66,11 +68,14 @@ get_tag_data(){
     log_error "Unexpected argument '$2' . Quote tags when using get_tag.";
     exit 1;
   fi
-  # For accuracy by default, first search for longname matches,
-  # but usually fall back to shortname matches.
+  # Usually do a direct shortname match.
   # Fall back to synonym after that
-  SQL="SELECT name, long_name, type, parent FROM tags WHERE long_name='$long_name';"
+  # If asked for long_name, return that first
+  SQL="SELECT tags.name, tags.long_name, tags.type, tags.parent FROM tags WHERE tags.long_name='$tag_name';"
   result=$(echo "$SQL" | sqlite3 -separator "$DB_DELIMITER" "$MEDIA_DB")
+
+  # Otherwise, always truncate it to short name and look for that.ß
+  tag_name=$(get_short_name "$tag_name")
 
   if [ -z "$result" ]; then
     SQL="SELECT name, long_name, type, parent FROM tags WHERE name='$tag_name';"
@@ -79,8 +84,12 @@ get_tag_data(){
 
   # Join the tags to the synonyms table to find the result by synonym
   if [ -z "$result" ]; then
+    log_debug "Looking for synonyms of '$tag_name'"
     SQL="SELECT tags.name, tags.long_name, tags.type, tags.parent FROM synonyms INNER JOIN tags ON synonyms.canonic = tags.name WHERE synonyms.synonym='$tag_name';"
     result=$(echo "$SQL" | sqlite3 -separator "$DB_DELIMITER" "$MEDIA_DB")
+    if [ -n "$result" ]; then
+      log_info "Switched to using synonym for '$tag_name' "
+    fi
   fi
   if [ -z "$result" ]; then
     log_info "Could not find an entry or synonym matching $tag_name"
@@ -127,6 +136,13 @@ get_long_name(){
   fi
   echo $long_name;
 }
+get_short_name(){
+  long_name="$1"
+  local pipe_pattern='\|'
+  # Get everything after the last pipe
+  tag_name="${long_name##*|}"
+  echo "$tag_name"
+}
 
 get_tag_type() {
   local tag_data=$(get_tag_data "$1")
@@ -171,12 +187,9 @@ ensure_tag_exists(){
     tag_name="${long_name##*|}"  # Get everything after the last pipe
     parent="${long_name%|*}"   # Get everything before the last pipe (parent hierarchy)
   fi
-  if [[ -n $parent ]]; then
-    ensure_tag_exists "$parent"
-  fi
 
   # Check if the tag exists.
-  result=$(get_tag_data "$long_name");
+  result=$(get_tag_data "$tag_name");
 
   # If the tag doesn't exist, create it
   if [ -z "$result" ]; then
@@ -186,20 +199,23 @@ ensure_tag_exists(){
     PRAGMA foreign_keys = ON;
     INSERT INTO tags (name, long_name, type) VALUES ('$tag_name', '$long_name', '$tag_type');
     "
-    echo "$SQL" | sqlite3 "$MEDIA_DB" || log_error $SQL
+    echo "$SQL" | sqlite3 "$MEDIA_DB" || log_error "$SQL"
   else
     log_debug "Tag '$tag_name' already exists."
   fi
 
   # If parent is provided and the tag exists but has no parent, update it.
-  current_parent=$(get_parent "$long_name");
+  current_parent=$(get_parent "$tag_name");
   if [[ -n "$parent" && -z "$current_parent" ]]; then
-    # We should have already run ensure_tag_exists "$parent" earlier
-    log_debug "Ensuring parentage of '$tag_name' is in place."
-    set_parent "$long_name" "$parent"
-    update_long_name_to_match_parent "$long_name"
+    log_info "Tag '$tag_name' should have parent '$parent' . Ensuring parent exists first."
+    ensure_tag_exists "$parent"
+    # That process may have resolved a synonym, so re-resolve to get the canonic parent name
+    parent=$(get_tag_name "$parent")
+    log_info "Ensuring parentage of '$tag_name' is in place."
+    set_parent "$tag_name" "$parent"
+    update_long_name_to_match_parent "$tag_name"
   fi
-
+  # log_info "Tag '$tag_name' exists"
 }
 
 update_long_name_to_match_parent(){
@@ -212,14 +228,15 @@ update_long_name_to_match_parent(){
     log_debug "'$tag_name' has no parent. No update needed."
     return 0;
   fi
-  expected_long_name="${parent}|${tag_name}"
+  parent_long_name=$(get_long_name "$parent")
+  expected_long_name="${parent_long_name}|${tag_name}"
   if [[ "$long_name" != "$expected_long_name" ]] ; then
     log_notice "Updating long_name of '$tag_name' from '$long_name' to '$expected_long_name' ."
     SQL="
     PRAGMA foreign_keys = ON;
     UPDATE tags SET long_name = '$expected_long_name' WHERE name = '$tag_name';
     "
-    echo "$SQL" | sqlite3 "$MEDIA_DB" || log_error $SQL
+    echo "$SQL" | sqlite3 "$MEDIA_DB" || log_error "$SQL"
   else
     log_debug "Long name of '$tag_name' is already correct."
   fi
@@ -234,41 +251,55 @@ get_parent(){
   if [[ ! -z "$parent" ]] ; then
     log_debug "Parent of '$tag_name' is '$parent' ."
   else
-    log_debug "'$tag_name' has no parent."
+    log_debug "'$tag_name' has no parent in the DB yet."
   fi
   echo $parent;
 }
 
-# Always use long_name by preference when working with heirarchies.
+# Set parent relationship using tag names as foreign keys
+# Parameters can be name, long_name, or synonym - will be resolved to name
 set_parent(){
-  long_name=$1
-  parent=$2
-  log_debug "Setting parent of '$long_name' to '$parent'."
+  child_tag=$1
+  parent_tag=$2
+  log_notice "Setting parent of '$child_tag' to '$parent_tag'."
 
-  # Update the tag with the parent.
-  # Must use current long_name religiously here to avoid ambiguity.
-  parent_long_name=$(get_long_name "$parent")
-  child_long_name=$(get_long_name "$long_name")
+  # Resolve both to canonical names in case someone was using synonyms etc.
+  parent_name=$(get_tag_name "$parent_tag")
+  child_name=$(get_tag_name "$child_tag")
+
+  if [[ -z "$child_name" ]]; then
+    log_error "Cannot find name of tag tag '$child_tag'. The child tag must exist before it can have the parent set"
+    return 1
+  fi
+
+  if [[ -z "$parent_name" ]]; then
+    log_error "Cannot find name of parent tag '$parent_tag'. The parent tag must exist befor it is referenced."
+    return 1
+  fi
+
   SQL="
   PRAGMA foreign_keys = ON;
-  UPDATE tags SET parent = '$parent_long_name' WHERE long_name = '$child_long_name';
+  UPDATE tags SET parent = '$parent_name' WHERE name = '$child_name';
   "
-  echo "$SQL" | sqlite3 "$MEDIA_DB" || log_error $SQL
+  echo "$SQL" | sqlite3 "$MEDIA_DB" || log_error "$SQL"
 }
 
 # usage:
 # set_synonym canonic synonym
-# Prefer to use long_name for the canonic/
+# Resolves canonic to tag name for foreign key relationship
 set_synonym(){
   canonic=$1
   synonym=$2
-  long_canonic=$(get_long_name $canonic)
-  if [[ -z "$long_canonic" ]]; then
-    log_error "No long name found for $canonic"
-    return 1;
+
+  # Resolve to canonical tag name
+  canonic_name=$(get_tag_name "$canonic")
+  if [[ -z "$canonic_name" ]]; then
+    log_error "No tag found for '$canonic'"
+    return 1
   fi
+
   # Ensure the canonic tag exists before setting the synonym
-  ensure_tag_exists "$long_canonic"
+  ensure_tag_exists "$canonic"
 
   # Check if the synonym already exists
   SQL="SELECT synonym FROM synonyms WHERE synonym='$synonym';"
@@ -278,10 +309,10 @@ set_synonym(){
   if [ -z "$result" ]; then
     SQL="
     PRAGMA foreign_keys = ON;
-    INSERT INTO synonyms (synonym, canonic) VALUES ('$synonym', '$long_canonic');
+    INSERT INTO synonyms (synonym, canonic) VALUES ('$synonym', '$canonic_name');
     ";
-    echo "$SQL" | sqlite3 "$MEDIA_DB" || log_error $SQL
-    log_notice "Added synonym '$synonym' for tag '$canonic' ($long_canonic)."
+    echo "$SQL" | sqlite3 "$MEDIA_DB" || log_error "$SQL"
+    log_notice "Added synonym '$synonym' for tag '$canonic_name'."
   else
     log_debug "Synonym '$synonym' already exists."
   fi
@@ -442,8 +473,14 @@ parse_parent_of(){
 
 # Helper function to display synonyms for a tag
 display_synonyms(){
-  local tag_name="$1"
+  local tag="$1"
   local indent="$2"
+
+  # Resolve to canonical name (canonic column stores names)
+  local tag_name=$(get_tag_name "$tag")
+  if [[ -z "$tag_name" ]]; then
+    return 0
+  fi
 
   # Get all synonyms for this tag
   SQL="SELECT synonym FROM synonyms WHERE canonic='$tag_name' ORDER BY synonym;"
@@ -458,13 +495,19 @@ display_synonyms(){
 }
 
 # Helper function to display child tags recursively
-# expects thge longname of the parent tag
+# Expects tag identifier (name, long_name, or synonym) - will be resolved to name
 display_child_tags(){
   local parent_tag="$1"
   local indent="$2"
 
+  # Resolve parent_tag to canonical name (parent column stores names)
+  local parent_name=$(get_tag_name "$parent_tag")
+  if [[ -z "$parent_name" ]]; then
+    return 0
+  fi
+
   # Get all child tags for this parent
-  SQL="SELECT name, long_name, type FROM tags WHERE parent='$parent_tag' ORDER BY name;"
+  SQL="SELECT name, long_name, type FROM tags WHERE parent='$parent_name' ORDER BY name;"
   child_tags=$(echo "$SQL" | sqlite3 -separator "$DB_DELIMITER" "$MEDIA_DB")
   # Process each child tag
   if [ -n "$child_tags" ]; then
@@ -479,8 +522,8 @@ display_child_tags(){
       # Display synonyms for this child tag
       display_synonyms "$long_name" "${indent}  "
 
-      # Recursively display this child's children with increased indentation
-      display_child_tags "$long_name" "${indent}${indent}"
+      # Recursively display this child's children (pass name for FK lookup)
+      display_child_tags "$tag_name" "${indent}${indent}"
     done
   fi
 }

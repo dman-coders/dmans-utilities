@@ -51,6 +51,8 @@ setup_animal_taxonomy() {
   # Equine
   ensure_tag_exists "Equine" "container" "Mammals"
   ensure_tag_exists "Horse" "leaf" "Equine"
+  set_synonym "Horse" "Mare"
+  set_synonym "Horse" "Stallion"
 
   # Feline
   ensure_tag_exists "Feline" "container" "Mammals"

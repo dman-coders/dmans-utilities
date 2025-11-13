@@ -12,7 +12,17 @@
       "Bash(exiftool:*)",
       "Bash(./test-tags-sample.sh:*)",
       "Bash(./test-process-tags-to-db.sh:*)",
-      "Bash(TESTFILE=\"/Volumes/dman/bin/dmans-utilities/media_library/tests/fixtures/test-image.jpg\")"
+      "Bash(TESTFILE=\"/Volumes/dman/bin/dmans-utilities/media_library/tests/fixtures/test-image.jpg\")",
+      "WebFetch(domain:code.claude.com)",
+      "Bash(./test_synonyms.sh:*)",
+      "Bash(./test_parent_child.sh:*)",
+      "Bash(./test_pipe_in_names.sh:*)",
+      "Bash(./test_longnames.sh:*)",
+      "Bash(./test_update_hierarchy.sh:*)",
+      "Bash(for test in test_parent_child.sh test_synonyms.sh test_pipe_in_names.sh)",
+      "Bash(do echo \"Running $test...\")",
+      "Bash(./$test)",
+      "Bash(done)"
     ],
     "deny": [],
     "ask": []

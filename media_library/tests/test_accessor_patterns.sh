@@ -48,7 +48,7 @@ echo "  parent: $(get_parent 'Horse')"
 
 # Verify the helper functions work as intended
 echo "  From longname: name: $(get_tag_name 'Animals|Mammals|Equine|Horse')"
-echo "  From synonym: name: $(get_tag_name 'Horsey')"
+echo "  From synonym: name: $(get_tag_name 'Mare')"
 
 
 echo ""

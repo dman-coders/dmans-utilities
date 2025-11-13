@@ -14,6 +14,7 @@ create_database
 
 # Create tags with pipes in the names (using standard Locations model)
 echo "Creating tags with | in their names..."
+echo "Starting with Locations|Indoors|House and Locations|Outdoor|Park"
 ensure_tag_exists "Locations|Indoors|House" "leaf"
 ensure_tag_exists "Locations|Outdoor|Park" "leaf"
 
@@ -35,6 +36,26 @@ if [[ "$long_name" == "Locations|Indoors|House" ]]; then
 else
   echo "✗ FAIL: Expected 'Locations|Indoors|House', got '$long_name'"
 fi
+
+# Test creating a simple tag, and then amending it with a long_name
+echo "Starting with a simple tag"
+ensure_tag_exists "Jungle"
+
+tag_data=$(get_tag_data "Jungle")
+parse_tag_data "$tag_data"
+dump_tag_values
+
+# To emulate vagueness, add a synonmym first.
+# this should merge, despite the typo in the next section.
+set_synonym "Outdoor" "Outdoors"
+
+echo "Expanding the simple tag with more info"
+# The following should be interpreted as additional information to support the simple name "Jungle"
+ensure_tag_exists "Locations|Outdoors|Jungle"
+tag_data=$(get_tag_data "Jungle")
+parse_tag_data "$tag_data"
+dump_tag_values
+
 
 echo ""
 echo "Testing complete."
