@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
-source "$(dirname "$0")/process_media.lib"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/process_media.lib"
 
 # Extract tags from media files and ensure they exist in the database.
 #
@@ -33,13 +34,18 @@ processFile() {
     local all_tags=()
 
     # Tag fields to extract from EXIF metadata
-    # Based on what Adobe Bridge and other tools use
-    local tag_fields=( Subject Keywords HierarchicalSubject Categories CatalogSets TagsList )
+    # Based on what Adobe Bridge and other tools use.
+    # Start by looking for heirarchical tags first.
+    # This means that any tree structure will be created before the short tags are used.
+    # If Heirarchical tagging is in place, then the flat tags found here wiull usually duplicatate those.
+    # It's fine to double up.
+    local tag_fields=( HierarchicalSubject Subject Keywords  Categories CatalogSets TagsList )
 
+    # This runs exiftool half dozen time, may be a quicker way.
     for field in "${tag_fields[@]}"; do
         # Extract the field value(s) - exiftool may return multiple values
         local field_values=$(exiftool -s -s -s "-${field}" "${source_file}" 2>/dev/null)
-
+        unset items
         if [[ -n "$field_values" ]]; then
             # Split by newlines and commas (exiftool uses both for multiple values)
             while IFS= read -r line; do
@@ -54,6 +60,7 @@ processFile() {
                 done
             done <<< "$field_values"
         fi
+        log_notice "Value of $field : $field_values = [${items[*]}]"
     done
 
     # Remove duplicates and process each unique tag
@@ -65,6 +72,7 @@ processFile() {
     fi
 
     log_notice "  Found ${#unique_tags[@]} unique tag(s)"
+    log_notice "All tags: [${unique_tags[*]}]"
 
     # Process each tag
     for tag in "${unique_tags[@]}"; do
@@ -78,15 +86,13 @@ processFile() {
 # Handles hierarchical tags (with slashes) by ensuring all parent tags exist
 process_tag() {
     local tag="$1"
-
     # Check if this is a hierarchical tag (contains slashes)
-    if [[ "$tag" == *"/"* ]]; then
+    if [[ "$tag" == *"|"* ]]; then
         log_debug "    Hierarchical tag: $tag"
-
         # For hierarchical tags, ensure_tag_exists handles the recursion
         # It will create all parent tags as containers automatically
-        local parent=$(parse_parent_of "$tag")
-        ensure_tag_exists "$tag" "leaf" "$parent"
+        #local parent=$(parse_parent_of "$tag")
+        ensure_tag_exists "$tag" "leaf" #"$parent"
     else
         # Simple flat tag
         log_debug "    Flat tag: $tag"
@@ -94,43 +100,11 @@ process_tag() {
     fi
 }
 
-# Export library functions needed by processFile in subprocess
-export -f log_notice
-export -f log_debug
-export -f log_error
-export -f ensure_tag_exists
-export -f parse_parent_of
-export -f process_tag
-
 # Export variables needed by subprocess
-export MEDIA_DB
-
-# Main execution
-log_notice "========================================="
-log_notice "Processing media files to extract tags"
-log_notice "========================================="
-
-# Count initial tags
-initial_count=$(echo "SELECT COUNT(*) FROM tags;" | sqlite3 "$MEDIA_DB")
-log_notice "Initial tag count: $initial_count"
+# export MEDIA_DB
+export processFile
 
 # Process all files
-parallalProcessFiles "$@"
+#parallalProcessFiles "$@"
+processFile "$@"
 
-# Count final tags
-final_count=$(echo "SELECT COUNT(*) FROM tags;" | sqlite3 "$MEDIA_DB")
-new_tags=$((final_count - initial_count))
-
-log_notice "========================================="
-log_notice "Processing complete!"
-log_notice "Initial tags: $initial_count"
-log_notice "Final tags: $final_count"
-log_notice "New tags added: $new_tags"
-log_notice "========================================="
-
-# Show the tag hierarchy
-if [[ $new_tags -gt 0 ]]; then
-    log_notice ""
-    log_notice "Tag hierarchy:"
-    dump_tags
-fi

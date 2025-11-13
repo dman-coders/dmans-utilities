@@ -10,7 +10,6 @@ echo "Testing parent-child relationships..."
 
 # Drop the database to start fresh
 drop_database
-
 # Create a new database
 create_database
 

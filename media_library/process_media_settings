@@ -8,19 +8,19 @@ log_notice $(ls "$UTIL_DIR" )
 log_debug "Media DB is $MEDIA_DB"
 
 # Test with existing tag and synonym
-set_synonym_for Happy HAPPY
+set_synonym Happy HAPPY
 
 # Test with a new container tag and multiple synonyms
 ensure_tag_exists "Location" "container"
-set_synonym_for "Location" "place"
+set_synonym "Location" "place"
 ensure_tag_exists "Location|Inside"
 ensure_tag_exists "Location|Outside"
-set_synonym_for "Location|Outside" "exterior"
+set_synonym "Location|Outside" "exterior"
 
 # Test with a new leaf tag
 ensure_tag_exists "NewTag" "leaf"
-set_synonym_for NewTag NEW
-set_synonym_for NewTag NEWTAG
+set_synonym NewTag NEW
+set_synonym NewTag NEWTAG
 
 # Display all tags and their synonyms
 log_notice "Displaying all tags and their synonyms:"
