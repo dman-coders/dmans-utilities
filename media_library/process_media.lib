@@ -4,7 +4,6 @@
 UTIL_DIR=${UTIL_DIR:-~/.media_processing}
 mkdir -p "$UTIL_DIR"
 MEDIA_DB="${MEDIA_DB:-${UTIL_DIR}/media.sqlite}"
-
 # Database output delimiter (CSV format to avoid collision with | in tag names)
 DB_DELIMITER=','
 
@@ -41,7 +40,7 @@ create_database(){
     FOREIGN KEY (parent) REFERENCES tags(name));
   CREATE TABLE synonyms (synonym TEXT PRIMARY KEY, canonic TEXT,
     FOREIGN KEY (canonic) REFERENCES tags(name));"
-  echo "$SQL" | sqlite3 "$MEDIA_DB" || log_error "$SQL"
+  sql_safe "$SQL"
   log_notice "Created tables in database $MEDIA_DB"
 
   # Insert initial data
@@ -49,7 +48,7 @@ create_database(){
   INSERT INTO tag_types (type) VALUES ('container');
   INSERT INTO tag_types (type) VALUES ('leaf');
   "
-  echo "$SQL" | sqlite3 "$MEDIA_DB"
+  sql_safe "$SQL"
 
   log_notice "Database $MEDIA_DB is ready"
 }
@@ -57,6 +56,46 @@ drop_database(){
   rm "$MEDIA_DB"
   log_notice "Dropped database $MEDIA_DB"
 }
+
+# Fast SQL wrapper for reads - no retry logic
+sql_fast() {
+  echo "$1" | sqlite3 -separator "$DB_DELIMITER" "$MEDIA_DB"
+}
+
+# Safe SQL wrapper for writes - retries on lock errors, logs all errors
+sql_safe() {
+  local sql="$1"
+  local max_retries=5
+  local retry=0
+  local temp_err=$(mktemp)
+
+  while [ $retry -lt $max_retries ]; do
+    if echo "$sql" | sqlite3 -separator "$DB_DELIMITER" "$MEDIA_DB" 2>"$temp_err"; then
+      rm -f "$temp_err"
+      return 0
+    fi
+
+    if grep -q "database is locked" "$temp_err"; then
+      retry=$((retry + 1))
+      log_info "SQLite locked, retry $retry/$max_retries"
+      sleep 0.$((RANDOM % 10))
+      continue
+    fi
+
+    # Non-lock error
+    local error_msg=$(cat "$temp_err")
+    rm -f "$temp_err"
+    log_error "SQL failed: $error_msg"
+    log_error "SQL was: $sql"
+    return 1
+  done
+
+  log_error "SQLite locked after $max_retries retries"
+  log_error "SQL was: $sql"
+  rm -f "$temp_err"
+  return 1
+}
+
 
 # Will search for a tag by name, or synonym.
 # returns a csv listing "name, long_name, type, parent"
@@ -72,21 +111,21 @@ get_tag_data(){
   # Fall back to synonym after that
   # If asked for long_name, return that first
   SQL="SELECT tags.name, tags.long_name, tags.type, tags.parent FROM tags WHERE tags.long_name='$tag_name';"
-  result=$(echo "$SQL" | sqlite3 -separator "$DB_DELIMITER" "$MEDIA_DB")
+  result=$(sql_fast "$SQL")
 
   # Otherwise, always truncate it to short name and look for that.ß
   tag_name=$(get_short_name "$tag_name")
 
   if [ -z "$result" ]; then
     SQL="SELECT name, long_name, type, parent FROM tags WHERE name='$tag_name';"
-    result=$(echo "$SQL" | sqlite3 -separator "$DB_DELIMITER" "$MEDIA_DB")
+    result=$(sql_fast "$SQL")
   fi
 
   # Join the tags to the synonyms table to find the result by synonym
   if [ -z "$result" ]; then
     log_debug "Looking for synonyms of '$tag_name'"
     SQL="SELECT tags.name, tags.long_name, tags.type, tags.parent FROM synonyms INNER JOIN tags ON synonyms.canonic = tags.name WHERE synonyms.synonym='$tag_name';"
-    result=$(echo "$SQL" | sqlite3 -separator "$DB_DELIMITER" "$MEDIA_DB")
+    result=$(sql_fast "$SQL")
     if [ -n "$result" ]; then
       log_info "Switched to using synonym for '$tag_name' "
     fi
@@ -136,6 +175,9 @@ get_long_name(){
   fi
   echo $long_name;
 }
+
+# This parses and trims a string, getting the short name from a long hierarchical name
+# not a DB accessor like the rest.
 get_short_name(){
   long_name="$1"
   local pipe_pattern='\|'
@@ -199,7 +241,7 @@ ensure_tag_exists(){
     PRAGMA foreign_keys = ON;
     INSERT INTO tags (name, long_name, type) VALUES ('$tag_name', '$long_name', '$tag_type');
     "
-    echo "$SQL" | sqlite3 "$MEDIA_DB" || log_error "$SQL"
+    sql_safe "$SQL"
   else
     log_debug "Tag '$tag_name' already exists."
   fi
@@ -213,32 +255,25 @@ ensure_tag_exists(){
     parent=$(get_tag_name "$parent")
     log_info "Ensuring parentage of '$tag_name' is in place."
     set_parent "$tag_name" "$parent"
-    update_long_name_to_match_parent "$tag_name"
   fi
   # log_info "Tag '$tag_name' exists"
 }
 
 update_long_name_to_match_parent(){
-  # Note, we cannot change the long_name of a tag that has other children already referring to it
-  # without a cascade effect, and it's prohibited by DB constraints.
   tag_name=$1
-  tag_data=$(get_tag_data "$tag_name")
-  IFS="${DB_DELIMITER}" read -r tag_name long_name type parent <<< "$tag_data"
-  if [[ -z "$parent" ]] ; then
-    log_debug "'$tag_name' has no parent. No update needed."
-    return 0;
-  fi
+  parent=$(get_parent "$tag_name")
   parent_long_name=$(get_long_name "$parent")
+  current_long_name=$(get_long_name "$tag_name")
   expected_long_name="${parent_long_name}|${tag_name}"
-  if [[ "$long_name" != "$expected_long_name" ]] ; then
-    log_notice "Updating long_name of '$tag_name' from '$long_name' to '$expected_long_name' ."
+  if [[ "$current_long_name" != "$expected_long_name" ]] ; then
+    log_notice "Updating long_name of '$tag_name' from '$current_long_name' to '$expected_long_name' ."
     SQL="
     PRAGMA foreign_keys = ON;
     UPDATE tags SET long_name = '$expected_long_name' WHERE name = '$tag_name';
     "
-    echo "$SQL" | sqlite3 "$MEDIA_DB" || log_error "$SQL"
+    sql_safe "$SQL"
   else
-    log_debug "Long name of '$tag_name' is already correct."
+    log_debug "Long name of '$tag_name' is already correct: '$expected_long_name'."
   fi
 }
 
@@ -248,7 +283,7 @@ get_parent(){
   tag=$1
   tag_data=$(get_tag_data "$tag")
   IFS="${DB_DELIMITER}" read -r tag_name long_name type parent <<< "$tag_data"
-  if [[ ! -z "$parent" ]] ; then
+  if [[ -n "$parent" ]] ; then
     log_debug "Parent of '$tag_name' is '$parent' ."
   else
     log_debug "'$tag_name' has no parent in the DB yet."
@@ -281,12 +316,14 @@ set_parent(){
   PRAGMA foreign_keys = ON;
   UPDATE tags SET parent = '$parent_name' WHERE name = '$child_name';
   "
-  echo "$SQL" | sqlite3 "$MEDIA_DB" || log_error "$SQL"
+  sql_safe "$SQL"
+  update_long_name_to_match_parent "$child_name"
 }
 
 # usage:
 # set_synonym canonic synonym
 # Resolves canonic to tag name for foreign key relationship
+# TODO - cehck for duplicates, and re-parent any items currently using the synonym as parent
 set_synonym(){
   canonic=$1
   synonym=$2
@@ -303,7 +340,7 @@ set_synonym(){
 
   # Check if the synonym already exists
   SQL="SELECT synonym FROM synonyms WHERE synonym='$synonym';"
-  result=$(echo "$SQL" | sqlite3 -separator "$DB_DELIMITER" "$MEDIA_DB")
+  result=$(sql_fast "$SQL")
 
   # If the synonym doesn't exist, create it
   if [ -z "$result" ]; then
@@ -311,7 +348,7 @@ set_synonym(){
     PRAGMA foreign_keys = ON;
     INSERT INTO synonyms (synonym, canonic) VALUES ('$synonym', '$canonic_name');
     ";
-    echo "$SQL" | sqlite3 "$MEDIA_DB" || log_error "$SQL"
+    sql_safe "$SQL"
     log_notice "Added synonym '$synonym' for tag '$canonic_name'."
   else
     log_debug "Synonym '$synonym' already exists."
@@ -324,7 +361,7 @@ set_synonym(){
 dump_tags(){
   # First, get all root tags (tags with no parent)
   SQL="SELECT name, long_name FROM tags WHERE parent IS NULL OR parent = '' ORDER BY name;"
-  root_tags=$(echo "$SQL" | sqlite3 -separator "$DB_DELIMITER" "$MEDIA_DB")
+  root_tags=$(sql_fast "$SQL")
 
   # Process each root tag
   echo "$root_tags" | while IFS="$DB_DELIMITER" read -r tag_name long_name; do
@@ -366,78 +403,26 @@ dump_tag_values(){
 # For example, "Location|Inside|Bedroom" will have a parent of "Location|Inside"
 # The delimiter is conventiolnally "|" to conform with Adobe Bridge HeirarchicalSubject
 # but may be expanded to "/" or ":" instead.
+#
+# This is unused, and may be deprecated - was just to clean bad old data.
 update_tag_hierarchy(){
   log_notice "Updating tag hierarchy..."
   DELIMITER="|";
 
   # Get all tags with slashes in their names
   SQL="SELECT name FROM tags WHERE name LIKE '%${DELIMITER}%';"
-  tags_with_slashes=$(echo "$SQL" | sqlite3 -separator "$DB_DELIMITER" "$MEDIA_DB")
+  tags_with_slashes=$(sql_fast "$SQL")
 
   # Process each tag
   if [ -n "$tags_with_slashes" ]; then
     # First, ensure all parent tags exist
     echo "$tags_with_slashes" | while read -r tag_name; do
-      parent=$(parse_parent_of "$tag_name")
-      # Split the tag name by delimiter into array (portable for bash/zsh)
-      local oldIFS="$IFS"
-      IFS="${DELIMITER}"
-      parts=($tag_name)
-      IFS="$oldIFS"
-      # If there's only one part, skip (no parent)
-      if [ ${#parts[@]} -le 1 ]; then
-        continue
+      parent=$(get_parent_name "$tag_name")
+      if [ -n "$parent" ]; then
+        ensure_tag_exists "$parent" "container"
       fi
-
-      # Ensure all parent tags in the hierarchy exist
-      current_path=""
-      for ((i=0; i<${#parts[@]}-1; i++)); do
-        if [ $i -eq 0 ]; then
-          current_path="${parts[$i]}"
-        else
-          current_path="$current_path${DELIMITER}${parts[$i]}"
-        fi
-
-        # Ensure this parent tag exists as a container
-        ensure_tag_exists "$current_path" "container"
-      done
+      set_parent "$tag_name" "$parent"
     done
-
-    # Now set the parent for each tag
-    # re-read the list to take into account any interim tags that may have been added.
-    tags_with_slashes=$(echo "$SQL" | sqlite3 -separator "$DB_DELIMITER" "$MEDIA_DB")
-    echo "$tags_with_slashes" | while read -r tag_name; do
-      # Split the tag name by delimiter into array (portable for bash/zsh)
-      local oldIFS="$IFS"
-      IFS="${DELIMITER}"
-      parts=($tag_name)
-      IFS="$oldIFS"
-
-      # If there's only one part, skip (no parent)
-      if [ ${#parts[@]} -le 1 ]; then
-        continue
-      fi
-
-      # Determine the parent tag
-      parent_tag=""
-      if [ ${#parts[@]} -eq 2 ]; then
-        # For tags with one slash (e.g., "Location|Inside"), the parent is the first part
-        parent_tag="${parts[0]}"
-      else
-        # For tags with multiple slashes, build the parent path
-        parent_tag=""
-        for ((i=0; i<${#parts[@]}-1; i++)); do
-          if [ $i -eq 0 ]; then
-            parent_tag="${parts[$i]}"
-          else
-            parent_tag="$parent_tag${DELIMITER}${parts[$i]}"
-          fi
-        done
-      fi
-
-      set_parent "$tag_name" "$parent_tag"
-    done
-
     log_notice "Tag hierarchy updated successfully."
   else
     log_notice "No tags with ${DELIMITER} delimiters found."
@@ -448,27 +433,17 @@ update_tag_hierarchy(){
   dump_tags
 }
 
-# chop the rightmost part of a path off.
+# Chop the rightmost part of a path off.
 # Basically identical to dirname?
-parse_parent_of(){
-  local tag_name="$1"
-  # Split the tag name by slashes
-  mapfile -d '/' -t parts < <(echo -n "$tag_name")
-
-  # If there's only one part, skip (no parent)
-  if [ ${#parts[@]} -le 1 ]; then
-    return 0
+# inverse of get_shortname
+get_parent_name() {
+  long_name="$1"
+  local pipe_pattern='\|'
+  if [[ $long_name =~ $pipe_pattern ]] ; then
+    #tag_name="${long_name##*|}"  # Get everything after the last pipe
+    parent="${long_name%|*}"   # Get everything before the last pipe (parent hierarchy)
   fi
-  # For tags with multiple slashes, build the parent path
-  parent_tag=""
-  for ((i=0; i<${#parts[@]}-1; i++)); do
-    if [ $i -eq 0 ]; then
-      parent_tag="${parts[$i]}"
-    else
-      parent_tag="$parent_tag/${parts[$i]}"
-    fi
-  done
-  echo $parent_tag
+  return $parent;
 }
 
 # Helper function to display synonyms for a tag
@@ -484,7 +459,7 @@ display_synonyms(){
 
   # Get all synonyms for this tag
   SQL="SELECT synonym FROM synonyms WHERE canonic='$tag_name' ORDER BY synonym;"
-  synonyms=$(echo "$SQL" | sqlite3 -separator "$DB_DELIMITER" "$MEDIA_DB")
+  synonyms=$(sql_fast "$SQL")
 
   # List each synonym indented
   if [ -n "$synonyms" ]; then
@@ -508,7 +483,7 @@ display_child_tags(){
 
   # Get all child tags for this parent
   SQL="SELECT name, long_name, type FROM tags WHERE parent='$parent_name' ORDER BY name;"
-  child_tags=$(echo "$SQL" | sqlite3 -separator "$DB_DELIMITER" "$MEDIA_DB")
+  child_tags=$(sql_fast "$SQL")
   # Process each child tag
   if [ -n "$child_tags" ]; then
     echo "$child_tags" | while IFS="$DB_DELIMITER" read -r tag_name long_name tag_type; do
@@ -539,24 +514,57 @@ parallalProcessFiles() {
     find "$@" -type f -print0 | xargs -0 -P 4 -I {} bash -c 'processFile "$1"' _ "{}"
 }
 
+# ensure
+# Db file locations is accessible, has an sqlite db, has the expected schema, and is responding.
+# Will try to create it if it's missing, or re-create it if it's corrupt.
+# Returns 0 on success, 1 on failure.
+# On failure, the caller may retry after a delay to handle transient locks.
 verifyDatabase() {
   log_notice "MEDIA_DB=$MEDIA_DB"
+
   # Require sqlite3 or die
   if ! command -v sqlite3 >/dev/null 2>&1; then
     log_error "sqlite3 is required"
     exit 1
   fi
 
-  # Check if the database file exists and is a valid SQLite database
+  # Check if the database file exists
   if [ ! -f "$MEDIA_DB" ]; then
     log_notice "Database file $MEDIA_DB does not exist. Creating it..."
-    create_database;
+    create_database
+    return 0
+  fi
+
+  # Capture stderr to detect specific errors
+  local error_output=$(mktemp)
+
+  # Check if it's a valid SQLite database
+  if ! echo "PRAGMA integrity_check;" | sqlite3 "$MEDIA_DB" > /dev/null 2>"$error_output"; then
+    local error_msg=$(cat "$error_output")
+    rm -f "$error_output"
+
+    # Check for lock vs corruption
+    if [[ "$error_msg" =~ "database is locked" ]]; then
+      log_error "Database is locked by another process. Waiting..."
+      sleep 1
+      return 1
+    elif [[ "$error_msg" =~ "not a database" ]] || [[ "$error_msg" =~ "malformed" ]]; then
+      log_error "Database file $MEDIA_DB is corrupt. Recreating it..."
+      drop_database
+      create_database
+    else
+      log_error "Database error: $error_msg"
+      return 1
+    fi
   else
-    # Check if it's a valid SQLite database by trying to run a simple query
-    if ! echo ".tables" | sqlite3 "$MEDIA_DB" &>/dev/null; then
-      log_notice "Database file $MEDIA_DB exists but appears to be invalid. Recreating it..."
-      drop_database;
-      create_database;
+    rm -f "$error_output"
+
+    # Verify expected tables exist
+    local tables=$(echo ".tables" | sqlite3 "$MEDIA_DB" 2>/dev/null)
+    if [[ ! "$tables" =~ "tags" ]] || [[ ! "$tables" =~ "synonyms" ]]; then
+      log_error "Database missing required tables. Recreating..."
+      drop_database
+      create_database
     else
       log_notice "Database file $MEDIA_DB exists and is valid."
     fi

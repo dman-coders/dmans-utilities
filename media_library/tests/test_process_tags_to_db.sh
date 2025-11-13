@@ -19,12 +19,11 @@ create_database
 
 
 # Create test fixture if it doesn't exist
-FIXTURES_LIST=$("$SCRIPT_DIR/test-create-fixtures.sh")
+FIXTURES_LIST=$("$SCRIPT_DIR/test_create_fixtures.sh")
 
 # Count initial tags
 initial_count=$(echo "SELECT COUNT(*) FROM tags;" | sqlite3 "$MEDIA_DB")
 log_notice "Initial tag count in db: $initial_count"
-
 
 for TESTFILE in $FIXTURES_LIST; do
   log_info "Using fixture: $TESTFILE"

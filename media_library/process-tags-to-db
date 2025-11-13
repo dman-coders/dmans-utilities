@@ -14,6 +14,7 @@ source "$SCRIPT_DIR/process_media.lib"
 # This does NOT store file-to-tag associations yet - just builds the tag hierarchy.
 
 processFile() {
+    source "$SCRIPT_DIR/process_media.lib"
     local source_file="$1"
 
     if [[ ! -f "${source_file}" ]]; then
@@ -48,6 +49,7 @@ processFile() {
         unset items
         if [[ -n "$field_values" ]]; then
             # Split by newlines and commas (exiftool uses both for multiple values)
+            # but not spaces within tags
             while IFS= read -r line; do
                 # Split by comma as well
                 IFS=',' read -ra items <<< "$line"
@@ -64,7 +66,8 @@ processFile() {
     done
 
     # Remove duplicates and process each unique tag
-    local unique_tags=($(printf '%s\n' "${all_tags[@]}" | sort -u))
+    # Use mapfile to preserve tags with spaces
+    mapfile -t unique_tags < <(printf '%s\n' "${all_tags[@]}" | sort -u)
 
     if [[ ${#unique_tags[@]} -eq 0 ]]; then
         log_debug "  No tags found in $source_file"
@@ -72,39 +75,22 @@ processFile() {
     fi
 
     log_notice "  Found ${#unique_tags[@]} unique tag(s)"
-    log_notice "All tags: [${unique_tags[*]}]"
+    log_notice "All tags: $(printf '"%s", ' "${unique_tags[@]}" | sed 's/, $//')"
 
     # Process each tag
     for tag in "${unique_tags[@]}"; do
-        process_tag "$tag"
+      log_info "Adding tag '$tag' to the database"
+      ensure_tag_exists "$tag"
     done
-
     return 0
 }
 
-# Process a single tag and ensure it exists in the database
-# Handles hierarchical tags (with slashes) by ensuring all parent tags exist
-process_tag() {
-    local tag="$1"
-    # Check if this is a hierarchical tag (contains slashes)
-    if [[ "$tag" == *"|"* ]]; then
-        log_debug "    Hierarchical tag: $tag"
-        # For hierarchical tags, ensure_tag_exists handles the recursion
-        # It will create all parent tags as containers automatically
-        #local parent=$(parse_parent_of "$tag")
-        ensure_tag_exists "$tag" "leaf" #"$parent"
-    else
-        # Simple flat tag
-        log_debug "    Flat tag: $tag"
-        ensure_tag_exists "$tag" "leaf"
-    fi
-}
-
 # Export variables needed by subprocess
-# export MEDIA_DB
 export processFile
+export SCRIPT_DIR
+export MEDIA_DB
 
 # Process all files
-#parallalProcessFiles "$@"
-processFile "$@"
+parallalProcessFiles "$@"
+#processFile "$@"
 

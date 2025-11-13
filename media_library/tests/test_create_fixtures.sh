@@ -25,7 +25,7 @@ if [[ ! -f "$TESTFILE" ]]; then
       -Subject="TestSubject" \
       -Keywords="Test Keyword 2, Test Keyword 1" \
       -HierarchicalSubject="Topic|testing|Fixture" \
-      -Categories="Test Category" \
+      -Categories="Test Category, Fixture" \
       "$TESTFILE" >/dev/null 2>&1
 
     log_info "Test fixture created: $TESTFILE"
