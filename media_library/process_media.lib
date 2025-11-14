@@ -20,9 +20,12 @@ log_info(){
 log_error(){
   printf "\033[31m$1\033[0m\n" >&2
 }
-
+log_success(){
+  printf "\033[32m$1\033[0m\n" >&2
+}
 
 create_database(){
+
   echo ".open $MEDIA_DB" | sqlite3
   log_notice "Initializing database $MEDIA_DB"
 
@@ -48,18 +51,71 @@ create_database(){
   INSERT INTO tag_types (type) VALUES ('container');
   INSERT INTO tag_types (type) VALUES ('leaf');
   "
-  sql_safe "$SQL"
-
-  log_notice "Database $MEDIA_DB is ready"
+  sql_safe "$SQL" &&  log_notice "Database $MEDIA_DB is ready"
 }
+
+dump_db() {
+  tables=( $(echo ".tables" | sqlite3 "$MEDIA_DB" ) )
+  for table in "${tables[@]}"; do
+    echo -e "\nTable: $table"
+    SQL="SELECT * FROM $table;"
+    echo "$SQL" | sqlite3 -column -header  "$MEDIA_DB"
+  done
+}
+
 drop_database(){
   rm "$MEDIA_DB"
   log_notice "Dropped database $MEDIA_DB"
 }
 
+# Optionally use an in memory version of sqlite for faster access
+# Requires SQLITE_USE_TMPFS environment variable to be set.
+# Copies existing database to tmpfs on open.
+# Serializes back to disk on exit.
+open_database(){
+  if [[ -n "$SQLITE_USE_TMPFS" ]]; then
+    MEDIA_DB_FILE=$MEDIA_DB
+
+    # Detect OS and use appropriate tmpfs location
+    if [[ "$(uname)" == "Darwin" ]]; then
+      # macOS - /tmp is tmpfs
+      TMPFS_DIR="/tmp/media_processing_$$"
+    else
+      # Linux - /dev/shm is tmpfs
+      TMPFS_DIR="/dev/shm/media_processing_$$"
+    fi
+
+    mkdir -p "$TMPFS_DIR"
+    MEDIA_DB="$TMPFS_DIR/media.sqlite"
+
+    if [[ -f "$MEDIA_DB_FILE" ]]; then
+      cp "$MEDIA_DB_FILE" "$MEDIA_DB"
+      log_notice "Copied existing database to tmpfs for faster access"
+    fi
+    log_notice "Using tmpfs for database at $MEDIA_DB"
+    trap "close_database" EXIT
+  fi
+}
+
+close_database(){
+  if [[ -n "$SQLITE_USE_TMPFS" ]]; then
+    cp "$MEDIA_DB" "$MEDIA_DB_FILE"
+    rm -rf "$(dirname "$MEDIA_DB")"
+    log_notice "Serialized tmpfs database back to $MEDIA_DB_FILE"
+  fi
+}
+
 # Fast SQL wrapper for reads - no retry logic
 sql_fast() {
   echo "$1" | sqlite3 -separator "$DB_DELIMITER" "$MEDIA_DB"
+}
+sql_fast_timed() {
+  local start=$(date +%s%N)
+  local result=$(echo "$1" | sqlite3 -separator "$DB_DELIMITER" "$MEDIA_DB")
+  local end=$(date +%s%N)
+  local elapsed=$(( (end - start) / 1000000 ))
+  echo "[${elapsed}ms] $1" >&2
+  echo "$result"
 }
 
 # Safe SQL wrapper for writes - retries on lock errors, logs all errors
@@ -103,6 +159,7 @@ sql_safe() {
 get_tag_data(){
   tag_name=$1
   long_name=$tag_name
+  tag_name=$(get_short_name "$tag_name")
   if [[ -n "$2" ]] ; then
     log_error "Unexpected argument '$2' . Quote tags when using get_tag.";
     exit 1;
@@ -110,24 +167,22 @@ get_tag_data(){
   # Usually do a direct shortname match.
   # Fall back to synonym after that
   # If asked for long_name, return that first
-  SQL="SELECT tags.name, tags.long_name, tags.type, tags.parent FROM tags WHERE tags.long_name='$tag_name';"
+  #SQL="SELECT tags.name, tags.long_name, tags.type, tags.parent FROM tags WHERE tags.long_name='$long_name';"
+  SQL="SELECT tags.name, tags.long_name, tags.type, tags.parent FROM tags WHERE tags.long_name='$long_name' OR tags.name='$tag_name';"
   result=$(sql_fast "$SQL")
 
-  # Otherwise, always truncate it to short name and look for that.ß
-  tag_name=$(get_short_name "$tag_name")
-
-  if [ -z "$result" ]; then
-    SQL="SELECT name, long_name, type, parent FROM tags WHERE name='$tag_name';"
-    result=$(sql_fast "$SQL")
-  fi
+  #if [ -z "$result" ]; then
+  #  SQL="SELECT tags.name, tags.long_name, tags.type, tags.parent FROM tags WHERE name='$tag_name';"
+  #  result=$(sql_fast "$SQL")
+  #fi
 
   # Join the tags to the synonyms table to find the result by synonym
   if [ -z "$result" ]; then
-    log_debug "Looking for synonyms of '$tag_name'"
+    # log_debug "Looking for synonyms of '$tag_name'"
     SQL="SELECT tags.name, tags.long_name, tags.type, tags.parent FROM synonyms INNER JOIN tags ON synonyms.canonic = tags.name WHERE synonyms.synonym='$tag_name';"
     result=$(sql_fast "$SQL")
     if [ -n "$result" ]; then
-      log_info "Switched to using synonym for '$tag_name' "
+      log_info "Using synonym for '$tag_name' "
     fi
   fi
   if [ -z "$result" ]; then
@@ -231,10 +286,10 @@ ensure_tag_exists(){
   fi
 
   # Check if the tag exists.
-  result=$(get_tag_data "$tag_name");
+  tag_data=$(get_tag_data "$tag_name");
 
   # If the tag doesn't exist, create it
-  if [ -z "$result" ]; then
+  if [ -z "$tag_data" ]; then
     log_notice "Tag '$tag_name' does not exist. Creating it with type '$tag_type'..."
     # create the entry, then add the parent association after
     SQL="
@@ -380,14 +435,6 @@ dump_tags(){
   done
 }
 
-dump_db() {
-  tables=( $(echo ".tables" | sqlite3 "$MEDIA_DB" ) )
-  for table in "${tables[@]}"; do
-    echo -e "\nTable: $table"
-    SQL="SELECT * FROM $table;"
-    echo "$SQL" | sqlite3 -column -header  "$MEDIA_DB"
-  done
-}
 
 # Utility to check if the current scope has these variables set/
 dump_tag_values(){
@@ -572,3 +619,4 @@ verifyDatabase() {
 }
 
 verifyDatabase
+open_database
