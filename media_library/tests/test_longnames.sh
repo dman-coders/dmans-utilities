@@ -2,44 +2,58 @@
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export MEDIA_DB="$SCRIPT_DIR/test.sqlite"
-# Source the library to initialize the database
 source "$SCRIPT_DIR/../process_media.lib"
+source "$SCRIPT_DIR/test_framework.sh"
 
-echo "Testing hierarchical long names with pipe delimiter..."
+init_test_suite "Hierarchical Long Names with Pipe Delimiter"
 
-# Drop the database to start fresh
-drop_database
+setup_test_db
 
-# Create a new database
-create_database
-
-# Create a hierarchy of tags using pipe-delimited long names
-echo "Creating hierarchy using long names (Locations|Parent|Child format)..."
-
-# Create tags using longnames - the hierarchy will be auto-created
+# Test 1: Create hierarchy using pipe-delimited notation
+begin_test "Create hierarchy from pipe-delimited long names"
 ensure_tag_exists "Locations|Indoors|Bedroom"
 ensure_tag_exists "Locations|Indoors|Kitchen"
 ensure_tag_exists "Locations|Indoors|Lounge"
 ensure_tag_exists "Locations|Indoors|House"
 ensure_tag_exists "Locations|Outdoor|Park"
 
-# Add synonyms to match standard model
+result=$(get_tag_data "Bedroom")
+parse_tag_data "$result"
+assert_equals "Indoors" "$parent" "Bedroom parent auto-created and set"
+assert_equals "Locations|Indoors|Bedroom" "$long_name" "Bedroom long_name is hierarchical"
+
+# Test 2: Parent tags auto-created
+begin_test "Parent tags automatically created from hierarchy"
+result=$(get_tag_data "Locations")
+assert_not_empty "$result" "Locations tag auto-created"
+
+result=$(get_tag_data "Indoors")
+parse_tag_data "$result"
+assert_equals "Locations" "$parent" "Indoors parent is Locations"
+
+# Test 3: Synonyms work with hierarchical tags
+begin_test "Synonyms can be added to hierarchical tags"
 set_synonym "Locations" "Place"
 set_synonym "Indoors" "Indoor"
 set_synonym "Indoors" "Inside"
 set_synonym "Outdoor" "Outside"
 set_synonym "Lounge" "Living Room"
 
-echo ""
-echo "Testing synonym resolution in long names..."
-echo "This should resolve the synonym from Inside->Indoors before saving as canonical longname."
-# This should resolve the synonym from Inside->Indoors before saving it as a canonical longname.
+result=$(get_tag_data "Place")
+parse_tag_data "$result"
+assert_equals "Locations" "$tag_name" "Synonym 'Place' resolves to 'Locations'"
+
+# Test 4: Synonym resolution in hierarchical path
+begin_test "Synonyms in hierarchical paths resolve to canonical form"
 ensure_tag_exists "Locations|Inside|TestRoom"
 
-# Display the hierarchy
-echo ""
-echo "Displaying the tag hierarchy:"
+result=$(get_tag_data "TestRoom")
+parse_tag_data "$result"
+assert_equals "Indoors" "$parent" "Parent 'Inside' resolved to canonical 'Indoors'"
+assert_contains "$long_name" "Indoors" "long_name uses canonical form 'Indoors'"
+
+log_info "Displaying complete tag hierarchy:"
 dump_tags
 
-echo ""
-echo "Testing complete."
+finish_test_suite
+exit $?

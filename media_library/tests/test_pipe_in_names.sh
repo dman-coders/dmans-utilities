@@ -3,59 +3,50 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export MEDIA_DB="$SCRIPT_DIR/test.sqlite"
 source "$SCRIPT_DIR/../process_media.lib"
+source "$SCRIPT_DIR/test_framework.sh"
 
-echo "Testing tags with pipe characters in names..."
+init_test_suite "Pipe Characters in Tag Names"
 
-# Drop the database to start fresh
-drop_database
+setup_test_db
 
-# Create a new database
-create_database
-
-# Create tags with pipes in the names (using standard Locations model)
-echo "Creating tags with | in their names..."
-echo "Starting with Locations|Indoors|House and Locations|Outdoor|Park"
+# Test 1: Create hierarchical tags with pipe notation
+begin_test "Create tags with pipe-delimited hierarchical names"
 ensure_tag_exists "Locations|Indoors|House" "leaf"
 ensure_tag_exists "Locations|Outdoor|Park" "leaf"
-
-echo ""
-echo "Looking up 'Locations|Indoors|House'..."
 result=$(get_tag_data "Locations|Indoors|House")
-echo "Result: $result"
+assert_not_empty "$result" "Tag created successfully"
 
-# Parse the result using CSV delimiter
+# Test 2: Verify pipe character preserved in long_name
+begin_test "Pipe characters preserved in long_name field"
 IFS="$DB_DELIMITER" read -r name long_name type parent <<< "$result"
-echo "Parsed values:"
-echo "  name: $name"
-echo "  long_name: $long_name"
-echo "  type: $type"
-echo "  parent: $parent"
+assert_equals "Locations|Indoors|House" "$long_name" "long_name preserves pipe delimiters"
+assert_equals "House" "$name" "name is short form"
+assert_equals "Indoors" "$parent" "parent correctly set"
 
-if [[ "$long_name" == "Locations|Indoors|House" ]]; then
-  echo "✓ PASS: Pipe character in long_name preserved correctly"
-else
-  echo "✗ FAIL: Expected 'Locations|Indoors|House', got '$long_name'"
-fi
-
-# Test creating a simple tag, and then amending it with a long_name
-echo "Starting with a simple tag"
+# Test 3: Simple tag expanded with hierarchical long_name
+# I first create "Jungle" tag, then later process a tag that specifies its full hierarchy.
+# The heritage should be applied to the simple tag.
+begin_test "Simple tag can be expanded with hierarchical long_name"
 ensure_tag_exists "Jungle"
-
 tag_data=$(get_tag_data "Jungle")
 parse_tag_data "$tag_data"
-dump_tag_values
+initial_long_name="$long_name"
+log_info "  Initial long_name: $initial_long_name"
 
-# To emulate vagueness, add a synonmym first.
-# this should merge, despite the typo in the next section.
+# Add synonym to test merging behavior
+# To confuse things, the new structure uses a different word in the middle,
+# but if the parent "Outdoor" is a synonym for "Outdoors", this will be managed.
 set_synonym "Outdoor" "Outdoors"
 
-echo "Expanding the simple tag with more info"
-# The following should be interpreted as additional information to support the simple name "Jungle"
+# Expand with hierarchical info - should merge via synonym resolution
 ensure_tag_exists "Locations|Outdoors|Jungle"
 tag_data=$(get_tag_data "Jungle")
 parse_tag_data "$tag_data"
-dump_tag_values
+log_info "  Expanded long_name: $long_name"
 
+assert_contains "$long_name" "Locations" "long_name contains Locations"
+assert_contains "$long_name" "Jungle" "long_name contains Jungle"
+assert_equals "Outdoor" "$parent" "parent resolved via synonym to canonical form"
 
-echo ""
-echo "Testing complete."
+finish_test_suite
+exit $?

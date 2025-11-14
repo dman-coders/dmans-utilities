@@ -3,104 +3,59 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export MEDIA_DB="$SCRIPT_DIR/test.sqlite"
 source "$SCRIPT_DIR/../process_media.lib"
+source "$SCRIPT_DIR/test_framework.sh"
 source "$SCRIPT_DIR/fixtures/setup_standard_data.sh"
 
-echo "Testing different accessor patterns for tag data..."
+init_test_suite "Data Accessor Patterns (Demo)"
 
-# Setup
-drop_database
-create_database
+setup_test_db
 setup_animal_taxonomy
 
-echo ""
-echo "=== Pattern 1: Traditional two-line approach (current) ==="
-echo ""
-
+# Pattern 1: Traditional two-line approach
+begin_test "Pattern 1: Traditional two-line approach"
 tag_data=$(get_tag_data "Dog")
 IFS="${DB_DELIMITER}" read -r tag_name long_name type parent <<< "$tag_data"
+log_info "  name: $tag_name, long_name: $long_name, type: $type, parent: $parent"
+assert_equals "Dog" "$tag_name" "Pattern 1 correctly retrieves tag name"
+assert_equals "Canine" "$parent" "Pattern 1 correctly retrieves parent"
 
-echo "Using Dog tag:"
-echo "  name: $tag_name"
-echo "  long_name: $long_name"
-echo "  type: $type"
-echo "  parent: $parent"
-
-echo ""
-echo "=== Pattern 2: Associative array (recommended for multiple fields) ==="
-echo ""
-
+# Pattern 2: Associative array
+begin_test "Pattern 2: Associative array (bash 4+)"
 get_tag_info "Cat"
-echo "Using Cat tag:"
-echo "  name: ${tag_info[name]}"
-echo "  long_name: ${tag_info[long_name]}"
-echo "  type: ${tag_info[type]}"
-echo "  parent: ${tag_info[parent]}"
+log_info "  name: ${tag_info[name]}, parent: ${tag_info[parent]}"
+assert_equals "Cat" "${tag_info[name]}" "Pattern 2 correctly retrieves tag name"
+assert_equals "Feline" "${tag_info[parent]}" "Pattern 2 correctly retrieves parent"
 
-echo ""
-echo "=== Pattern 3: Individual accessor functions (best for single values) ==="
-echo ""
+# Pattern 3: Individual accessor functions
+begin_test "Pattern 3: Individual accessor functions"
+horse_name=$(get_tag_name 'Horse')
+horse_parent=$(get_parent 'Horse')
+log_info "  name: $horse_name, parent: $horse_parent"
+assert_equals "Horse" "$horse_name" "Pattern 3 retrieves tag name"
+assert_equals "Equine" "$horse_parent" "Pattern 3 retrieves parent"
 
-echo "Using Horse tag:"
-echo "  name: $(get_tag_name 'Horse')"
-echo "  long_name: $(get_long_name 'Horse')"
-echo "  type: $(get_tag_type 'Horse')"
-echo "  parent: $(get_parent 'Horse')"
+# Test accessor functions with different input types
+begin_test "Pattern 3: Accessor functions work with long names"
+name_from_long=$(get_tag_name 'Animals|Mammals|Equine|Horse')
+assert_equals "Horse" "$name_from_long" "get_tag_name works with long name"
 
-# Verify the helper functions work as intended
-echo "  From longname: name: $(get_tag_name 'Animals|Mammals|Equine|Horse')"
-echo "  From synonym: name: $(get_tag_name 'Mare')"
+begin_test "Pattern 3: Accessor functions work with synonyms"
+name_from_synonym=$(get_tag_name 'Mare')
+assert_equals "Horse" "$name_from_synonym" "get_tag_name works with synonym"
 
-
-echo ""
-echo "=== Pattern 4: Helper function with global variables ==="
-echo ""
-
+# Pattern 4: Helper with global variables
+begin_test "Pattern 4: Helper with global variables"
 parse_tag_data "$(get_tag_data 'Lion')"
-echo "Using Lion tag:"
-echo "  name: $tag_name"
-echo "  long_name: $long_name"
-echo "  type: $type"
-echo "  parent: $parent"
+log_info "  name: $tag_name, long_name: $long_name, type: $type, parent: $parent"
+assert_equals "Lion" "$tag_name" "Pattern 4 correctly parses tag name"
+assert_equals "Feline" "$parent" "Pattern 4 correctly parses parent"
 
-echo ""
-echo "=== Demonstrating Scope Issue ==="
-echo ""
+log_info ""
+log_info "Pattern Recommendations:"
+log_info "  Pattern 1: Clear, explicit - use when you need all 4 fields"
+log_info "  Pattern 2: Clean syntax - use for multiple fields in bash 4+"
+log_info "  Pattern 3: Simple - use when you only need 1-2 fields"
+log_info "  Pattern 4: Slightly cleaner than 1 - use for readability"
 
-
-echo ""
-echo "=== Pattern Comparison ==="
-echo ""
-
-echo "Pattern 1 (parsing explicitly after fetching data):"
-echo "  Pros: Clear, explicit, works everywhere"
-echo "  Cons: Verbose, repetitive"
-echo "  Use when: You need all 4 fields"
-echo ""
-
-echo "Pattern 2 (Associative Array):"
-echo "  Pros: Clean syntax, single lookup, feels like data structure"
-echo "  Cons: Requires bash 4+, global variable"
-echo "  Use when: You need multiple fields, modern bash environment"
-echo ""
-
-echo "Pattern 3 (Individual Functions):"
-echo "  Pros: Clear intent, shell-agnostic, simple"
-echo "  Cons: Multiple DB queries if you need all fields"
-echo "  Use when: You only need 1-2 specific fields"
-echo ""
-
-
-echo "Pattern 4 (Helper with Global Variables):"
-echo "  Pros: Still explicit, slightly cleaner than Pattern 1"
-echo "  Cons: Global variable pollution, requires two function calls"
-echo "  Use when: You want Pattern 1 but slightly cleaner"
-
-echo ""
-echo "=== Scope Rules Summary ==="
-echo "1. Variables in functions are local BY DEFAULT when using 'local'"
-echo "2. Variables in functions WITHOUT 'local' are GLOBAL (available to caller)"
-echo "3. Variables set in YOUR SCRIPT (not in a function) are always available"
-echo "4. Command substitution \$(func) creates a subshell - can only return via stdout"
-
-echo ""
-echo "Testing complete."
+finish_test_suite
+exit $?

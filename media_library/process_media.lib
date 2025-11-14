@@ -54,7 +54,7 @@ create_database(){
   sql_safe "$SQL" &&  log_notice "Database $MEDIA_DB is ready"
 }
 
-dump_db() {
+dump_database() {
   tables=( $(echo ".tables" | sqlite3 "$MEDIA_DB" ) )
   for table in "${tables[@]}"; do
     echo -e "\nTable: $table"
@@ -119,6 +119,8 @@ sql_fast_timed() {
 }
 
 # Safe SQL wrapper for writes - retries on lock errors, logs all errors
+# This was introduced to deal with async processes.
+# The bulk indexing can be multithreaded so we need to contend with write-locks.
 sql_safe() {
   local sql="$1"
   local max_retries=5
@@ -566,7 +568,7 @@ parallalProcessFiles() {
 # Will try to create it if it's missing, or re-create it if it's corrupt.
 # Returns 0 on success, 1 on failure.
 # On failure, the caller may retry after a delay to handle transient locks.
-verifyDatabase() {
+verify_database() {
   log_notice "MEDIA_DB=$MEDIA_DB"
 
   # Require sqlite3 or die
@@ -618,5 +620,5 @@ verifyDatabase() {
   fi
 }
 
-verifyDatabase
+verify_database
 open_database
