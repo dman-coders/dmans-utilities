@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 
-curl -s -H "Authorization: MediaBrowser Token=\"$JELLYFIN_API_KEY\"" \
-     "http://$JELLYFIN_HOST:$JELLYFIN_PORT/Items/Filters?=?UserId=$JELLYFIN_USERID" \
-     | jq ".Genres"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/jellyfin-utils.lib"
 
+# Genres - List all available genres in the Jellyfin library
+#
+# Usage: Genres
+
+log_debug "Retrieving available genres"
+
+jellyfin_request GET "/Items/Filters?UserId=$JELLYFIN_USERID"
+echo "$API_BODY" | jq ".Genres"

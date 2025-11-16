@@ -1,4 +1,6 @@
 # Things to try with Jellyfin API:
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/jellyfin-utils.lib"
 
 # List the collections
 ./ListCollections
@@ -7,7 +9,7 @@
 COLLECTION_JSON=$( ./ListCollections | jq -r 'to_entries | .[now % length].value' )
 COLLECTION_NAME=$(echo $COLLECTION_JSON | jq -r '.Name')
 COLLECTION_ID=$(echo $COLLECTION_JSON | jq -r '.Id')
-echo "Selected collection: $COLLECTION_NAME $COLLECTION_ID"
+log_success "Selected collection: $COLLECTION_NAME $COLLECTION_ID"
 
 # List the items in that collections
 #COLLECTION_ITEMS=$( ./CollectionItems "$COLLECTION_ID" )
@@ -16,15 +18,27 @@ echo "Selected collection: $COLLECTION_NAME $COLLECTION_ID"
 ITEM_JSON=$( ./CollectionItems "$COLLECTION_ID"  | jq -r 'to_entries | .[now % length].value' )
 ITEM_NAME=$(echo $ITEM_JSON | jq -r '.Name')
 ITEM_ID=$(echo $ITEM_JSON | jq -r '.Id')
-echo "Selected Item: $ITEM_NAME $ITEM_ID"
+log_success "Selected Item: $ITEM_NAME $ITEM_ID"
 
 # retrieve details about that item
+ITEM_JSON=$( ./GetItem "$ITEM_ID" )
+echo "$ITEM_JSON" | jq
 
 # Find the file path on the server
+#SERVER_FILE_PATH=$( echo "$ITEM_JSON" | jq -r '.MediaSources[0].Path' )
+SERVER_FILE_PATH=$( echo "$ITEM_JSON" | jq -r '.Path' )
 
-# convert that to alocal path
+# convert that to a local path
+LOCAL_FILE_PATH=$( jellyfin_local_path "$SERVER_FILE_PATH" )
+log_success "Local file path: $LOCAL_FILE_PATH"
 
 # Investigate the local path.
+exiftool "$LOCAL_FILE_PATH"
+
+# run some processes to ensure the metadata is clean and synchronised with the local media_library database
+process-clips "$LOCAL_FILE_PATH"
+
+######
 
 # It seems that [box set] collections can only collect videos, not images.
 # Try adding ain item (in this case an iomage) to a collections.

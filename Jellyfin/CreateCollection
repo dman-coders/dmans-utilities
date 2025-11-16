@@ -1,51 +1,38 @@
 #!/usr/bin/env bash
 
-# Usage: CreateCollection "Collection Name" [ItemIds]
-# Examples:
-#   CreateCollection "Test Collection"
-#   CreateCollection "New Collection" "item-id-1,item-id-2"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/jellyfin-utils.lib"
+
+# CreateCollection - Create a new Jellyfin collection
 #
-# Note: Jellyfin Collections (BoxSets) do not support hierarchical nesting.
-# All collections are created at the same level. Use naming conventions
-# for organization (e.g., "Location-Inside-Bedroom" or "Location: Inside: Bedroom")
+# Usage: CreateCollection "Collection Name" [ItemIds]
+#
+# Examples:
+#   CreateCollection "My Collection"
+#   CreateCollection "Best Videos" "id1,id2,id3"
 
 NAME="$1"
 ITEM_IDS="$2"
 
-if [ -z "$NAME" ]; then
-    echo "Usage: $0 \"Collection Name\" [ItemIds]" >&2
-    echo "  ItemIds: Optional comma-separated list of item IDs to add" >&2
-    exit 1
-fi
+jellyfin_require_args 1 $# "Usage: $0 \"Collection Name\" [ItemIds]" || exit 1
 
 # URL encode the name
 ENCODED_NAME=$(printf %s "$NAME" | jq -sRr @uri)
 
-# Build URL with query parameters
-URL="http://$JELLYFIN_HOST:$JELLYFIN_PORT/Collections?Name=$ENCODED_NAME&UserId=$JELLYFIN_USERID"
+URL_PARAMS="?Name=$ENCODED_NAME&UserId=$JELLYFIN_USERID"
+[ -n "$ITEM_IDS" ] && URL_PARAMS="${URL_PARAMS}&Ids=$ITEM_IDS"
 
-# Add Ids if provided
-if [ -n "$ITEM_IDS" ]; then
-    URL="${URL}&Ids=$ITEM_IDS"
-    echo "Adding items: $ITEM_IDS" >&2
-fi
+log_notice "Creating collection: $NAME"
+[ -n "$ITEM_IDS" ] && log_debug "  Adding items: $ITEM_IDS"
 
-echo "Creating collection: $NAME" >&2
+jellyfin_request POST "/Collections$URL_PARAMS"
 
-# Create the collection
-RESPONSE=$(curl -s -X POST \
-    -H "Authorization: MediaBrowser Token=\"$JELLYFIN_API_KEY\"" \
-    "$URL")
-
-# Check if response is valid JSON
-if echo "$RESPONSE" | jq -e . >/dev/null 2>&1; then
-    COLLECTION_ID=$(echo "$RESPONSE" | jq -r '.Id')
-    echo "" >&2
-    echo "Collection created successfully!" >&2
-    echo "  ID: $COLLECTION_ID" >&2
-    echo "" >&2
-    echo "$RESPONSE" | jq '.'
+if jellyfin_success; then
+    COLLECTION_ID=$(echo "$API_BODY" | jq -r '.Id')
+    log_success "Collection created successfully"
+    log_notice "  Collection ID: $COLLECTION_ID"
+    echo "$API_BODY" | jq '.'
 else
-    echo "Error: $RESPONSE" >&2
+    log_error "Failed to create collection: $API_BODY"
     exit 1
 fi

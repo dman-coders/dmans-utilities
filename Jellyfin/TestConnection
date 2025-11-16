@@ -1,4 +1,26 @@
 #!/usr/bin/env bash
 
-curl -vv -H "Authorization: MediaBrowser Token=\"$JELLYFIN_API_KEY\"" \
-     http://$JELLYFIN_HOST:$JELLYFIN_PORT
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/jellyfin-utils.lib"
+
+# TestConnection - Test Jellyfin API connectivity
+#
+# Usage: TestConnection
+
+log_info "Testing connection to Jellyfin server..."
+log_debug "Server: ${JELLYFIN_API_URL}"
+
+curl -v -H "Authorization: MediaBrowser Token=\"$JELLYFIN_API_KEY\"" \
+    "${JELLYFIN_API_URL}/" 2>&1 | grep -E "^< HTTP|^* Connected"
+
+jellyfin_request GET "/System/Info"
+
+if jellyfin_success; then
+    log_success "Connected successfully"
+    SERVER_NAME=$(echo "$API_BODY" | jq -r '.ServerName')
+    SERVER_VERSION=$(echo "$API_BODY" | jq -r '.Version')
+    log_notice "Server: $SERVER_NAME (v$SERVER_VERSION)"
+else
+    log_error "Connection failed (HTTP $API_STATUS)"
+    exit 1
+fi

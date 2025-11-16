@@ -1,5 +1,20 @@
 #!/usr/bin/env bash
 
-curl -s -H "Authorization: MediaBrowser Token=\"$JELLYFIN_API_KEY\"" \
-     "http://$JELLYFIN_HOST:$JELLYFIN_PORT/Items?IncludeItemTypes=BoxSet&Recursive=true&UserId=$JELLYFIN_USERID&Fields=Path,ParentId" \
-     | jq '.Items | map({Name, Id, ParentId, ItemCount: .RecursiveItemCount, Path})'
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/jellyfin-utils.lib"
+
+# ListCollections - List all Jellyfin collections (BoxSets)
+#
+# Usage: ListCollections [--fields FIELD1,FIELD2,...]
+#
+# Returns JSON array of collections
+
+FIELDS="Path,ParentId,ItemCount"
+[ "$1" = "--fields" ] && FIELDS="$2"
+
+log_debug "Listing all collections"
+
+ENDPOINT="/Items?IncludeItemTypes=BoxSet&Recursive=true&UserId=$JELLYFIN_USERID&Fields=$FIELDS"
+
+jellyfin_request GET "$ENDPOINT"
+echo "$API_BODY" | jq '.Items | map({Name, Id, ParentId, ItemCount: .RecursiveItemCount, Path})'

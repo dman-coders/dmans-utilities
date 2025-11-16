@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/jellyfin-utils.lib"
+
+# jellyfin-get-item-by-path - Retrieve Jellyfin item by filesystem path
+#
+# Usage: jellyfin-get-item-by-path "/path/to/file.mp4"
+#   or:  jellyfin-get-item-by-path "relative/path/to/file"
+#
+# Returns: JSON item details including Id, Name, Path, Tags, Genres
+
+FILE_PATH="$1"
+
+jellyfin_require_args 1 $# "Usage: $0 /path/to/file" || exit 1
+
+FILE_PATH=$(jellyfin_normalize_path "$FILE_PATH")
+
+log_info "Looking up item by path: $FILE_PATH"
+
+# Fetch items with Path field
+RESPONSE=$(curl -s -H "Authorization: MediaBrowser Token=\"$JELLYFIN_API_KEY\"" \
+    "${JELLYFIN_API_URL}/Items?Recursive=true&IncludeItemTypes=Video,Photo&Fields=Path,Name,Id,Tags,Genres,Type,Container,RunTimeTicks,PremiereDate,ImageTags&Limit=1000")
+
+# Filter to find exact path match
+ITEM=$(echo "$RESPONSE" | jq --arg path "$FILE_PATH" '.Items[] | select(.Path == $path)' 2>/dev/null)
+
+if [ -z "$ITEM" ] || [ "$ITEM" = "null" ]; then
+    log_error "Item not found at path: $FILE_PATH"
+    exit 1
+fi
+
+log_success "Found item"
+echo "$ITEM" | jq '.'

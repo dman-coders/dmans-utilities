@@ -1,5 +1,13 @@
 #!/usr/bin/env bash
 
-curl -s -H "Authorization: MediaBrowser Token=\"$JELLYFIN_API_KEY\"" \
-     http://$JELLYFIN_HOST:$JELLYFIN_PORT/Library/MediaFolders \
-     | jq '.Items | map([.Name, .CollectionType, .Type, .LocationType, .Path])'
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/jellyfin-utils.lib"
+
+# MediaFolders - List all media libraries (CollectionFolders)
+#
+# Usage: MediaFolders
+
+log_debug "Retrieving media folders"
+
+jellyfin_request GET "/Library/MediaFolders"
+echo "$API_BODY" | jq '.Items | map([.Name, .CollectionType, .Type, .LocationType, .Path])'

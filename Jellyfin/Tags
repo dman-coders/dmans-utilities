@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 
-curl -s -H "Authorization: MediaBrowser Token=\"$JELLYFIN_API_KEY\"" \
-     "http://$JELLYFIN_HOST:$JELLYFIN_PORT/Items/Filters?=?UserId=$JELLYFIN_USERID" \
-     | jq ".Tags"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/jellyfin-utils.lib"
 
+# Tags - List all available tags in the Jellyfin library
+#
+# Usage: Tags
+
+log_debug "Retrieving available tags"
+
+jellyfin_request GET "/Items/Filters?UserId=$JELLYFIN_USERID"
+echo "$API_BODY" | jq ".Tags"

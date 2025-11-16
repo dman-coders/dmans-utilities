@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/jellyfin-utils.lib"
+
 # Items - Query Jellyfin items with flexible filtering
 #
 # Usage: Items [options]
@@ -7,8 +10,9 @@
 # Options:
 #   --type TYPE              Include item types (Video, Photo, PhotoAlbum, BoxSet)
 #   --recursive              Search recursively (default: true)
+#   --no-recursive           Disable recursive search
 #   --limit N                Limit results (default: 1000)
-#   --fields FIELD1,FIELD2   Fields to include (default: basic fields)
+#   --fields FIELD1,FIELD2   Fields to include
 #   --tags TAG               Filter by tag
 #   --genres GENRE           Filter by genre
 #   --parent-id ID           Filter by parent folder ID
@@ -18,7 +22,7 @@
 INCLUDE_TYPES="Video,Photo"
 RECURSIVE=true
 LIMIT=1000
-FIELDS="Path,Name,Id,Tags,Genres,Type"
+FIELDS=""
 EXTRA_PARAMS=""
 
 # Parse arguments
@@ -65,14 +69,23 @@ while [[ $# -gt 0 ]]; do
             exit 0
             ;;
         *)
-            echo "Unknown option: $1" >&2
+            log_error "Unknown option: $1"
             exit 1
             ;;
     esac
 done
 
-# Build URL
-URL="http://$JELLYFIN_HOST:$JELLYFIN_PORT/Items?IncludeItemTypes=$INCLUDE_TYPES&Recursive=$RECURSIVE&Limit=$LIMIT&Fields=$FIELDS$EXTRA_PARAMS"
+log_debug "Querying items (type=$INCLUDE_TYPES, limit=$LIMIT)"
 
-# Make request
-curl -s -H "Authorization: MediaBrowser Token=\"$JELLYFIN_API_KEY\"" "$URL" | jq '.Items'
+ENDPOINT="/Items?IncludeItemTypes=$INCLUDE_TYPES&Recursive=$RECURSIVE&Limit=$LIMIT"
+[ -n "$FIELDS" ] && ENDPOINT="${ENDPOINT}&Fields=$FIELDS"
+ENDPOINT="${ENDPOINT}${EXTRA_PARAMS}"
+
+jellyfin_request GET "$ENDPOINT"
+
+if jellyfin_success; then
+    echo "$API_BODY" | jq '.Items'
+else
+    log_error "Query failed (HTTP $API_STATUS): $API_BODY"
+    exit 1
+fi

@@ -1,29 +1,30 @@
 #!/usr/bin/env bash
 
-# GetItem - Get detailed information about a specific Jellyfin item
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/jellyfin-utils.lib"
+
+# GetItem - Get detailed information about a Jellyfin item
 #
 # Usage: GetItem ITEM_ID [--fields FIELD1,FIELD2,...]
 #
-# Returns full item details as JSON
+# Examples:
+#   GetItem "abc123def456"
+#   GetItem "abc123def456" --fields Id,Name,Path,Tags
 
 ITEM_ID="$1"
 FIELDS="$2"
 
-if [ -z "$ITEM_ID" ]; then
-    echo "Usage: $0 ITEM_ID [--fields FIELD1,FIELD2,...]" >&2
-    exit 1
-fi
+jellyfin_require_args 1 $# "Usage: $0 ITEM_ID [--fields FIELD1,FIELD2,...]" || exit 1
 
-# Remove --fields flag if present
+# Handle --fields flag
 if [ "$FIELDS" = "--fields" ]; then
     FIELDS="$3"
 fi
 
-# Build URL - use Users endpoint for full item details
-URL="http://$JELLYFIN_HOST:$JELLYFIN_PORT/Users/$JELLYFIN_USERID/Items/$ITEM_ID"
-if [ -n "$FIELDS" ]; then
-    URL="${URL}?Fields=$FIELDS"
-fi
+log_info "Retrieving item: $ITEM_ID"
 
-# Make request
-curl -s -H "Authorization: MediaBrowser Token=\"$JELLYFIN_API_KEY\"" "$URL" | jq '.'
+ENDPOINT="/Users/$JELLYFIN_USERID/Items/$ITEM_ID"
+[ -n "$FIELDS" ] && ENDPOINT="${ENDPOINT}?Fields=$FIELDS"
+
+jellyfin_request GET "$ENDPOINT"
+jellyfin_handle_response "" "true"

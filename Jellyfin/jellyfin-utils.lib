@@ -1,24 +1,175 @@
+#!/usr/bin/env bash
 
-# Given a remote root path and a local root path
-# Map a remote file path to a local file path
-# Assunme
-# path on the server is
-# export JELLYFIN_ROOT_DATA_FOLDER=/mnt/raid1/X/HOWTO
-# And that same folder is currently mapped to a local folder
-# export JELLYFIN_LOCAL_DATA_FOLDER=/Volumes/x-files/HOWTO
-# Then jellyfin-local-path /mnt/raid1/X/HOWTO/movies/movie1.mkv
-# would return /Volumes/x-files/HOWTO/movies/movie1.mkv
-# Usage: jellyfin-local-path <relative-path>
-jellyfin-local-path() {
-  local remote_path="$1"
-  return "${remote_path/#$JELLYFIN_ROOT_DATA_FOLDER/$JELLYFIN_LOCAL_DATA_FOLDER}"
+# Jellyfin API utilities library
+# Requires environment variables: JELLYFIN_HOST, JELLYFIN_PORT, JELLYFIN_API_KEY, JELLYFIN_USERID
+# Optional: JELLYFIN_ROOT_DATA_FOLDER, JELLYFIN_LOCAL_DATA_FOLDER
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../feedback.lib"
+
+# API Configuration
+export JELLYFIN_API_URL="${JELLYFIN_API_URL:-http://$JELLYFIN_HOST:$JELLYFIN_PORT}"
+export JELLYFIN_CURL_OPTIONS="-H 'Authorization: MediaBrowser Token=\"$JELLYFIN_API_KEY\"'"
+
+# ============================================================================
+# Error handling and validation
+# ============================================================================
+
+jellyfin_require_args() {
+    local min_args=$1
+    local actual_args=$2
+    local usage_text="$3"
+
+    if [ "$actual_args" -lt "$min_args" ]; then
+        log_error "Insufficient arguments"
+        [ -n "$usage_text" ] && echo "$usage_text" >&2
+        return 1
+    fi
+    return 0
 }
 
-# Inverse of jellyfin-local-path
-# Given a local root path and a remote root path
-# Map a local file path to a remote file path
-# Usage: jellyfin-remote-path <relative-path>
-jellyfin-remote-path() {
-  local remote_path="$1"
-  return "${remote_path/#$JELLYFIN_ROOT_DATA_FOLDER/$JELLYFIN_LOCAL_DATA_FOLDER}"
+jellyfin_check_required_vars() {
+    local vars=("$@")
+    for var in "${vars[@]}"; do
+        if [ -z "${!var}" ]; then
+            log_error "Required environment variable not set: $var"
+            return 1
+        fi
+    done
+    return 0
+}
+
+# ============================================================================
+# API request helpers
+# ============================================================================
+
+# Make an API request and return body and status code
+# Usage: jellyfin_request METHOD ENDPOINT [DATA]
+# Sets: API_STATUS (HTTP status code), API_BODY (response body)
+jellyfin_request() {
+    local method="$1"
+    local endpoint="$2"
+    local data="$3"
+
+    local url="${JELLYFIN_API_URL}${endpoint}"
+    local response
+    local curl_cmd
+
+    if [ "$method" = "GET" ]; then
+        curl_cmd="curl -s -w \"\\n%{http_code}\" -H \"Authorization: MediaBrowser Token=\\\"$JELLYFIN_API_KEY\\\"\" \"$url\""
+        log_debug "API Request: $method $endpoint"
+        log_debug "  Command: $curl_cmd"
+        response=$(curl -s -w "\n%{http_code}" \
+            -H "Authorization: MediaBrowser Token=\"$JELLYFIN_API_KEY\"" \
+            "$url")
+    else
+        if [ -n "$data" ]; then
+            curl_cmd="curl -s -w \"\\n%{http_code}\" -X $method -H \"Authorization: MediaBrowser Token=\\\"$JELLYFIN_API_KEY\\\"\" -H \"Content-Type: application/json\" -d '$data' \"$url\""
+            log_debug "API Request: $method $endpoint"
+            log_debug "  Body: $data"
+            log_debug "  Command: $curl_cmd"
+            response=$(curl -s -w "\n%{http_code}" -X "$method" \
+                -H "Authorization: MediaBrowser Token=\"$JELLYFIN_API_KEY\"" \
+                -H "Content-Type: application/json" -d "$data" \
+                "$url")
+        else
+            curl_cmd="curl -s -w \"\\n%{http_code}\" -X $method -H \"Authorization: MediaBrowser Token=\\\"$JELLYFIN_API_KEY\\\"\" \"$url\""
+            log_debug "API Request: $method $endpoint"
+            log_debug "  Command: $curl_cmd"
+            response=$(curl -s -w "\n%{http_code}" -X "$method" \
+                -H "Authorization: MediaBrowser Token=\"$JELLYFIN_API_KEY\"" \
+                "$url")
+        fi
+    fi
+
+    # Extract status and body (macOS compatible)
+    API_STATUS=$(echo "$response" | tail -1)
+    API_BODY=$(echo "$response" | sed '$d')
+
+    log_debug "API Response: HTTP $API_STATUS"
+}
+
+# Check if API response indicates success (200, 201, 204)
+jellyfin_success() {
+    case "$API_STATUS" in
+        200|201|204) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# Handle API response - log and exit if error
+# Usage: jellyfin_handle_response [SUCCESS_MSG] [SHOW_BODY]
+jellyfin_handle_response() {
+    local success_msg="${1:-Operation completed}"
+    local show_body="${2:-false}"
+
+    if jellyfin_success; then
+        log_success "$success_msg"
+        if [ "$show_body" = "true" ] && [ -n "$API_BODY" ]; then
+            echo "$API_BODY" | jq '.' 2>/dev/null || echo "$API_BODY"
+        fi
+        return 0
+    else
+        log_error "API Error (HTTP $API_STATUS): $API_BODY"
+        return 1
+    fi
+}
+
+# ============================================================================
+# Path mapping utilities
+# ============================================================================
+
+# Map remote path to local path
+# Usage: jellyfin_local_path <remote-path>
+jellyfin_local_path() {
+    local remote_path="$1"
+    if [ -n "$JELLYFIN_ROOT_DATA_FOLDER" ] && [ -n "$JELLYFIN_LOCAL_DATA_FOLDER" ]; then
+        echo "${remote_path/#$JELLYFIN_ROOT_DATA_FOLDER/$JELLYFIN_LOCAL_DATA_FOLDER}"
+    else
+      log_error "JELLYFIN_ROOT_DATA_FOLDER or JELLYFIN_LOCAL_DATA_FOLDER not set"
+        echo "$remote_path"
+    fi
+}
+
+# Map local path to remote path
+# Usage: jellyfin_remote_path <local-path>
+jellyfin_remote_path() {
+    local local_path="$1"
+    if [ -n "$JELLYFIN_ROOT_DATA_FOLDER" ] && [ -n "$JELLYFIN_LOCAL_DATA_FOLDER" ]; then
+        echo "${local_path/#$JELLYFIN_LOCAL_DATA_FOLDER/$JELLYFIN_ROOT_DATA_FOLDER}"
+    else
+        echo "$local_path"
+    fi
+}
+
+# ============================================================================
+# Parameter helpers
+# ============================================================================
+
+# Join array items with delimiter
+# Usage: jellyfin_join_ids "," "id1" "id2" "id3"
+jellyfin_join_ids() {
+    local delim="$1"
+    shift
+    local IFS="$delim"
+    echo "$*"
+}
+
+# Normalize a file path to absolute path
+# Usage: jellyfin_normalize_path <path>
+jellyfin_normalize_path() {
+    local path="$1"
+
+    # If relative, prepend root data folder
+    if [[ "$path" != /* ]]; then
+        path="${JELLYFIN_ROOT_DATA_FOLDER:-/mnt/raid1/X/HOWTO}/$path"
+    fi
+
+    # Normalize (cd if possible, otherwise just return)
+    if cd "$(dirname "$path")" 2>/dev/null; then
+        echo "$PWD/$(basename "$path")"
+        cd "$SCRIPT_DIR"
+    else
+        echo "$path"
+    fi
 }
