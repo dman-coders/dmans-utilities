@@ -1,0 +1,195 @@
+#!/usr/bin/env bash
+
+# SQLite database management functions for media library
+# Handles database lifecycle, tmpfs optimization, and SQL execution
+
+# Database output delimiter (CSV format to avoid collision with | in tag names)
+DB_DELIMITER=','
+
+# Fast SQL wrapper for reads - no retry logic
+sql_fast() {
+  echo "$1" | sqlite3 -separator "$DB_DELIMITER" "$MEDIA_DB"
+}
+
+sql_fast_timed() {
+  local start=$(date +%s%N)
+  local result=$(echo "$1" | sqlite3 -separator "$DB_DELIMITER" "$MEDIA_DB")
+  local end=$(date +%s%N)
+  local elapsed=$(( (end - start) / 1000000 ))
+  echo "[${elapsed}ms] $1" >&2
+  echo "$result"
+}
+
+# Safe SQL wrapper for writes - retries on lock errors, logs all errors
+sql_safe() {
+  local sql="$1"
+  local max_retries=5
+  local retry=0
+  local temp_err=$(mktemp)
+
+  while [ $retry -lt $max_retries ]; do
+    if echo "$sql" | sqlite3 -separator "$DB_DELIMITER" "$MEDIA_DB" 2>"$temp_err"; then
+      rm -f "$temp_err"
+      return 0
+    fi
+
+    if grep -q "database is locked" "$temp_err"; then
+      retry=$((retry + 1))
+      log_info "SQLite locked, retry $retry/$max_retries"
+      sleep 0.$((RANDOM % 10))
+      continue
+    fi
+
+    # Non-lock error
+    local error_msg=$(cat "$temp_err")
+    rm -f "$temp_err"
+    log_error "SQL failed: $error_msg"
+    log_error "SQL was: $sql"
+    return 1
+  done
+
+  log_error "SQLite locked after $max_retries retries"
+  log_error "SQL was: $sql"
+  rm -f "$temp_err"
+  return 1
+}
+
+# Create database schema
+create_database(){
+  echo ".open $MEDIA_DB" | sqlite3
+  log_notice "Initializing database $MEDIA_DB"
+
+  # Create all tables at once with foreign key constraints
+  # name is the primary key and used for all foreign key relationships
+  # long_name is a cosmetic/convenience field for display and hierarchy definition
+  SQL="PRAGMA foreign_keys = ON;
+  CREATE TABLE tag_types (type TEXT PRIMARY KEY);
+  CREATE TABLE tags (
+    name TEXT PRIMARY KEY,
+    long_name TEXT UNIQUE,
+    type TEXT,
+    parent TEXT,
+    FOREIGN KEY (type) REFERENCES tag_types(type),
+    FOREIGN KEY (parent) REFERENCES tags(name));
+  CREATE TABLE synonyms (synonym TEXT PRIMARY KEY, canonic TEXT,
+    FOREIGN KEY (canonic) REFERENCES tags(name));"
+  sql_safe "$SQL"
+  log_notice "Created tables in database $MEDIA_DB"
+
+  # Insert initial data
+  SQL="
+  INSERT INTO tag_types (type) VALUES ('container');
+  INSERT INTO tag_types (type) VALUES ('leaf');
+  "
+  sql_safe "$SQL" &&  log_notice "Database $MEDIA_DB is ready"
+}
+
+# Drop database
+drop_database(){
+  rm "$MEDIA_DB"
+  log_notice "Dropped database $MEDIA_DB"
+}
+
+# Optionally use an in memory version of sqlite for faster access
+# Requires SQLITE_USE_TMPFS environment variable to be set.
+# Copies existing database to tmpfs on open.
+# Serializes back to disk on exit.
+open_database(){
+  if [[ -n "$SQLITE_USE_TMPFS" ]]; then
+    MEDIA_DB_FILE=$MEDIA_DB
+
+    # Detect OS and use appropriate tmpfs location
+    if [[ "$(uname)" == "Darwin" ]]; then
+      # macOS - /tmp is tmpfs
+      TMPFS_DIR="/tmp/media_processing_$$"
+    else
+      # Linux - /dev/shm is tmpfs
+      TMPFS_DIR="/dev/shm/media_processing_$$"
+    fi
+
+    mkdir -p "$TMPFS_DIR"
+    MEDIA_DB="$TMPFS_DIR/media.sqlite"
+
+    if [[ -f "$MEDIA_DB_FILE" ]]; then
+      cp "$MEDIA_DB_FILE" "$MEDIA_DB"
+      log_notice "Copied existing database to tmpfs for faster access"
+    fi
+    log_notice "Using tmpfs for database at $MEDIA_DB"
+    trap "close_database" EXIT
+  fi
+}
+
+# Serialize tmpfs database back to disk
+close_database(){
+  if [[ -n "$SQLITE_USE_TMPFS" ]]; then
+    cp "$MEDIA_DB" "$MEDIA_DB_FILE"
+    rm -rf "$(dirname "$MEDIA_DB")"
+    log_notice "Serialized tmpfs database back to $MEDIA_DB_FILE"
+  fi
+}
+
+# Ensure database file exists, has correct schema, and is responding
+# Will try to create it if it's missing, or re-create it if it's corrupt.
+# Returns 0 on success, 1 on failure.
+# On failure, the caller may retry after a delay to handle transient locks.
+verify_database() {
+  log_notice "MEDIA_DB=$MEDIA_DB"
+
+  # Require sqlite3 or die
+  if ! command -v sqlite3 >/dev/null 2>&1; then
+    log_error "sqlite3 is required"
+    exit 1
+  fi
+
+  # Check if the database file exists
+  if [ ! -f "$MEDIA_DB" ]; then
+    log_notice "Database file $MEDIA_DB does not exist. Creating it..."
+    create_database
+    return 0
+  fi
+
+  # Capture stderr to detect specific errors
+  local error_output=$(mktemp)
+
+  # Check if it's a valid SQLite database
+  if ! echo "PRAGMA integrity_check;" | sqlite3 "$MEDIA_DB" > /dev/null 2>"$error_output"; then
+    local error_msg=$(cat "$error_output")
+    rm -f "$error_output"
+
+    # Check for lock vs corruption
+    if [[ "$error_msg" =~ "database is locked" ]]; then
+      log_error "Database is locked by another process. Waiting..."
+      sleep 1
+      return 1
+    elif [[ "$error_msg" =~ "not a database" ]] || [[ "$error_msg" =~ "malformed" ]]; then
+      log_error "Database file $MEDIA_DB is corrupt. Recreating it..."
+      drop_database
+      create_database
+    else
+      log_error "Database error: $error_msg"
+      return 1
+    fi
+  else
+    rm -f "$error_output"
+
+    # Verify expected tables exist
+    local tables=$(echo ".tables" | sqlite3 "$MEDIA_DB" 2>/dev/null)
+    if [[ ! "$tables" =~ "tags" ]] || [[ ! "$tables" =~ "synonyms" ]]; then
+      log_error "Database missing required tables. Recreating..."
+      drop_database
+      create_database
+    else
+      log_notice "Database file $MEDIA_DB exists and is valid."
+    fi
+  fi
+}
+
+# Dump all tables for debugging
+dump_database() {
+  tables=( $(echo ".tables" | sqlite3 "$MEDIA_DB" ) )
+  for table in "${tables[@]}"; do
+    echo -e "\nTable: $table"
+    SQL="SELECT * FROM $table;"
+    echo "$SQL" | sqlite3 -column -header  "$MEDIA_DB"
+  done
+}

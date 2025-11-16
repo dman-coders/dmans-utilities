@@ -1,0 +1,18 @@
+
+
+log_notice(){
+  echo "$1"  >&2
+}
+log_debug(){
+  printf "\033[93m$1\033[0m\n"  >&2
+}
+log_info(){
+  # ligh blue
+  printf "\033[94m$1\033[0m\n"  >&2
+}
+log_error(){
+  printf "\033[31m$1\033[0m\n" >&2
+}
+log_success(){
+  printf "\033[32m$1\033[0m\n" >&2
+}

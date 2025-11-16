@@ -1,159 +1,66 @@
 #!/usr/bin/env bash
 
 # utilities re-used by the media processing tools
-UTIL_DIR=${UTIL_DIR:-~/.media_processing}
-mkdir -p "$UTIL_DIR"
-MEDIA_DB="${MEDIA_DB:-${UTIL_DIR}/media.sqlite}"
-# Database output delimiter (CSV format to avoid collision with | in tag names)
-DB_DELIMITER=','
+# Define MEDIA_DB path before initializing to override default location.
 
-log_notice(){
-  echo "$1"  >&2
-}
-log_debug(){
-  printf "\033[93m$1\033[0m\n"  >&2
-}
-log_info(){
-  # ligh blue
-  printf "\033[94m$1\033[0m\n"  >&2
-}
-log_error(){
-  printf "\033[31m$1\033[0m\n" >&2
-}
-log_success(){
-  printf "\033[32m$1\033[0m\n" >&2
-}
+UTIL_DIR=${MEDIA_LIB_DIR:-~/.media_processing}
+mkdir -p "$MEDIA_LIB_DIR"
+MEDIA_DB="${MEDIA_DB:-${MEDIA_LIB_DIR}/media.sqlite}"
 
-create_database(){
+# Source SQLite database management functions
+LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$LIB_DIR/sqlite.lib"
+source "$LIB_DIR/../feedback.lib"
 
-  echo ".open $MEDIA_DB" | sqlite3
-  log_notice "Initializing database $MEDIA_DB"
 
-  # Create all tables at once with foreign key constraints
-  # name is the primary key and used for all foreign key relationships
-  # long_name is a cosmetic/convenience field for display and hierarchy definition
-  SQL="PRAGMA foreign_keys = ON;
-  CREATE TABLE tag_types (type TEXT PRIMARY KEY);
-  CREATE TABLE tags (
-    name TEXT PRIMARY KEY,
-    long_name TEXT UNIQUE,
-    type TEXT,
-    parent TEXT,
-    FOREIGN KEY (type) REFERENCES tag_types(type),
-    FOREIGN KEY (parent) REFERENCES tags(name));
-  CREATE TABLE synonyms (synonym TEXT PRIMARY KEY, canonic TEXT,
-    FOREIGN KEY (canonic) REFERENCES tags(name));"
-  sql_safe "$SQL"
-  log_notice "Created tables in database $MEDIA_DB"
+# Check if a tag exists in the database, and create it if not
+# usage: ensure_tag_exists tag_name [tag_type] [parent]
+ensure_tag_exists(){
+  local tag_name=$1
+  local long_name=$tag_name
+  local tag_type=${2:-leaf}  # Default to 'leaf' if no type is provided
+  local parent=$3            # Optional parent tag
 
-  # Insert initial data
-  SQL="
-  INSERT INTO tag_types (type) VALUES ('container');
-  INSERT INTO tag_types (type) VALUES ('leaf');
-  "
-  sql_safe "$SQL" &&  log_notice "Database $MEDIA_DB is ready"
-}
-
-dump_database() {
-  tables=( $(echo ".tables" | sqlite3 "$MEDIA_DB" ) )
-  for table in "${tables[@]}"; do
-    echo -e "\nTable: $table"
-    SQL="SELECT * FROM $table;"
-    echo "$SQL" | sqlite3 -column -header  "$MEDIA_DB"
-  done
-}
-
-drop_database(){
-  rm "$MEDIA_DB"
-  log_notice "Dropped database $MEDIA_DB"
-}
-
-# Optionally use an in memory version of sqlite for faster access
-# Requires SQLITE_USE_TMPFS environment variable to be set.
-# Copies existing database to tmpfs on open.
-# Serializes back to disk on exit.
-open_database(){
-  if [[ -n "$SQLITE_USE_TMPFS" ]]; then
-    MEDIA_DB_FILE=$MEDIA_DB
-
-    # Detect OS and use appropriate tmpfs location
-    if [[ "$(uname)" == "Darwin" ]]; then
-      # macOS - /tmp is tmpfs
-      TMPFS_DIR="/tmp/media_processing_$$"
-    else
-      # Linux - /dev/shm is tmpfs
-      TMPFS_DIR="/dev/shm/media_processing_$$"
-    fi
-
-    mkdir -p "$TMPFS_DIR"
-    MEDIA_DB="$TMPFS_DIR/media.sqlite"
-
-    if [[ -f "$MEDIA_DB_FILE" ]]; then
-      cp "$MEDIA_DB_FILE" "$MEDIA_DB"
-      log_notice "Copied existing database to tmpfs for faster access"
-    fi
-    log_notice "Using tmpfs for database at $MEDIA_DB"
-    trap "close_database" EXIT
-  fi
-}
-
-close_database(){
-  if [[ -n "$SQLITE_USE_TMPFS" ]]; then
-    cp "$MEDIA_DB" "$MEDIA_DB_FILE"
-    rm -rf "$(dirname "$MEDIA_DB")"
-    log_notice "Serialized tmpfs database back to $MEDIA_DB_FILE"
-  fi
-}
-
-# Fast SQL wrapper for reads - no retry logic
-sql_fast() {
-  echo "$1" | sqlite3 -separator "$DB_DELIMITER" "$MEDIA_DB"
-}
-sql_fast_timed() {
-  local start=$(date +%s%N)
-  local result=$(echo "$1" | sqlite3 -separator "$DB_DELIMITER" "$MEDIA_DB")
-  local end=$(date +%s%N)
-  local elapsed=$(( (end - start) / 1000000 ))
-  echo "[${elapsed}ms] $1" >&2
-  echo "$result"
-}
-
-# Safe SQL wrapper for writes - retries on lock errors, logs all errors
-# This was introduced to deal with async processes.
-# The bulk indexing can be multithreaded so we need to contend with write-locks.
-sql_safe() {
-  local sql="$1"
-  local max_retries=5
-  local retry=0
-  local temp_err=$(mktemp)
-
-  while [ $retry -lt $max_retries ]; do
-    if echo "$sql" | sqlite3 -separator "$DB_DELIMITER" "$MEDIA_DB" 2>"$temp_err"; then
-      rm -f "$temp_err"
-      return 0
-    fi
-
-    if grep -q "database is locked" "$temp_err"; then
-      retry=$((retry + 1))
-      log_info "SQLite locked, retry $retry/$max_retries"
-      sleep 0.$((RANDOM % 10))
-      continue
-    fi
-
-    # Non-lock error
-    local error_msg=$(cat "$temp_err")
-    rm -f "$temp_err"
-    log_error "SQL failed: $error_msg"
-    log_error "SQL was: $sql"
+  if [[ -z "$tag_name" ]] ; then
+    log_error "No tag name for $0"
     return 1
-  done
+  fi
 
-  log_error "SQLite locked after $max_retries retries"
-  log_error "SQL was: $sql"
-  rm -f "$temp_err"
-  return 1
+  # If it appears to be a '|' delimited heirarchical tagname, deal with that
+  local pipe_pattern='\|'
+  if [[ $long_name =~ $pipe_pattern ]] ; then
+    tag_name="${long_name##*|}"  # Get everything after the last pipe
+    parent="${long_name%|*}"   # Get everything before the last pipe (parent hierarchy)
+  fi
+
+  # Check if the tag exists.
+  tag_data=$(get_tag_data "$tag_name");
+
+  # If the tag doesn't exist, create it
+  if [ -z "$tag_data" ]; then
+    log_notice "Tag '$tag_name' does not exist. Creating it with type '$tag_type'..."
+    # create the entry, then add the parent association after
+    SQL="
+    PRAGMA foreign_keys = ON;
+    INSERT INTO tags (name, long_name, type) VALUES ('$tag_name', '$long_name', '$tag_type');
+    "
+    sql_safe "$SQL"
+  else
+    log_debug "Tag '$tag_name' already exists."
+  fi
+
+  # If parent is provided and the tag exists but has no parent, update it.
+  current_parent=$(get_parent "$tag_name");
+  if [[ -n "$parent" && -z "$current_parent" ]]; then
+    log_info "Tag '$tag_name' should have parent '$parent' . Ensuring parent exists first."
+    ensure_tag_exists "$parent"
+    # That process may have resolved a synonym, so re-resolve to get the canonic parent name
+    parent=$(get_tag_name "$parent")
+    log_info "Ensuring parentage of '$tag_name' is in place."
+    set_parent "$tag_name" "$parent"
+  fi
+  # log_info "Tag '$tag_name' exists"
 }
-
 
 # Will search for a tag by name, or synonym.
 # returns a csv listing "name, long_name, type, parent"
@@ -233,8 +140,8 @@ get_long_name(){
   echo $long_name;
 }
 
-# This parses and trims a string, getting the short name from a long hierarchical name
-# not a DB accessor like the rest.
+# This parses and trims a string, getting the short name from a long hierarchical name.
+# Not a DB accessor like the rest.
 get_short_name(){
   long_name="$1"
   local pipe_pattern='\|'
@@ -243,99 +150,28 @@ get_short_name(){
   echo "$tag_name"
 }
 
+# Chop the rightmost part of a path string off.
+# Basically identical to dirname?
+# Inverse of get_shortname()
+get_parent_name() {
+  long_name="$1"
+  local pipe_pattern='\|'
+  if [[ $long_name =~ $pipe_pattern ]] ; then
+    #tag_name="${long_name##*|}"  # Get everything after the last pipe
+    parent="${long_name%|*}"   # Get everything before the last pipe (parent hierarchy)
+  fi
+  return $parent;
+}
+
+# Virtuially unused.
 get_tag_type() {
   local tag_data=$(get_tag_data "$1")
   IFS="${DB_DELIMITER}" read -r _ _ type _ <<< "$tag_data"
   echo "$type"
 }
 
-# Helper function that sets global variables (alternative to Pattern 1)
-# Usage: parse_tag_data "$(get_tag_data 'Dog')"
-#        echo "$tag_name $long_name $type $parent"
-# Note: Variables are GLOBAL (no local keyword) so available to caller
-# Can also be used to unset these variables.
-parse_tag_data() {
-  local csv_data="$1"
-  if [[ -z "$csv_data" ]]; then
-    tag_name=""
-    long_name=""
-    type=""
-    parent=""
-    return 1
-  fi
-  # These variables are NOT local, so they're set in the caller's scope
-  IFS="${DB_DELIMITER}" read -r tag_name long_name type parent <<< "$csv_data"
-}
-
-# Check if a tag exists in the database, and create it if not
-# usage: ensure_tag_exists tag_name [tag_type] [parent]
-ensure_tag_exists(){
-  local tag_name=$1
-  local long_name=$tag_name
-  local tag_type=${2:-leaf}  # Default to 'leaf' if no type is provided
-  local parent=$3            # Optional parent tag
-
-  if [[ -z "$tag_name" ]] ; then
-    log_error "No tag name for $0"
-    return 1
-  fi
-
-  # If it appears to be a '|' delimited heirarchical tagname, deal with that
-  local pipe_pattern='\|'
-  if [[ $long_name =~ $pipe_pattern ]] ; then
-    tag_name="${long_name##*|}"  # Get everything after the last pipe
-    parent="${long_name%|*}"   # Get everything before the last pipe (parent hierarchy)
-  fi
-
-  # Check if the tag exists.
-  tag_data=$(get_tag_data "$tag_name");
-
-  # If the tag doesn't exist, create it
-  if [ -z "$tag_data" ]; then
-    log_notice "Tag '$tag_name' does not exist. Creating it with type '$tag_type'..."
-    # create the entry, then add the parent association after
-    SQL="
-    PRAGMA foreign_keys = ON;
-    INSERT INTO tags (name, long_name, type) VALUES ('$tag_name', '$long_name', '$tag_type');
-    "
-    sql_safe "$SQL"
-  else
-    log_debug "Tag '$tag_name' already exists."
-  fi
-
-  # If parent is provided and the tag exists but has no parent, update it.
-  current_parent=$(get_parent "$tag_name");
-  if [[ -n "$parent" && -z "$current_parent" ]]; then
-    log_info "Tag '$tag_name' should have parent '$parent' . Ensuring parent exists first."
-    ensure_tag_exists "$parent"
-    # That process may have resolved a synonym, so re-resolve to get the canonic parent name
-    parent=$(get_tag_name "$parent")
-    log_info "Ensuring parentage of '$tag_name' is in place."
-    set_parent "$tag_name" "$parent"
-  fi
-  # log_info "Tag '$tag_name' exists"
-}
-
-update_long_name_to_match_parent(){
-  tag_name=$1
-  parent=$(get_parent "$tag_name")
-  parent_long_name=$(get_long_name "$parent")
-  current_long_name=$(get_long_name "$tag_name")
-  expected_long_name="${parent_long_name}|${tag_name}"
-  if [[ "$current_long_name" != "$expected_long_name" ]] ; then
-    log_notice "Updating long_name of '$tag_name' from '$current_long_name' to '$expected_long_name' ."
-    SQL="
-    PRAGMA foreign_keys = ON;
-    UPDATE tags SET long_name = '$expected_long_name' WHERE name = '$tag_name';
-    "
-    sql_safe "$SQL"
-  else
-    log_debug "Long name of '$tag_name' is already correct: '$expected_long_name'."
-  fi
-}
-
 # Lookup by name or longname. $tag may be any shape.
-# It's valid for a tag to have no parent/
+# It's valid for a tag to have no parent so may return empty.
 get_parent(){
   tag=$1
   tag_data=$(get_tag_data "$tag")
@@ -348,8 +184,8 @@ get_parent(){
   echo $parent;
 }
 
-# Set parent relationship using tag names as foreign keys
-# Parameters can be name, long_name, or synonym - will be resolved to name
+# Set parent relationship using tag names as foreign keys.
+# Parameters can be name, long_name, or synonym - will be resolved to name.
 set_parent(){
   child_tag=$1
   parent_tag=$2
@@ -377,9 +213,11 @@ set_parent(){
   update_long_name_to_match_parent "$child_name"
 }
 
+# Adds a synonym to a tag. Avoids duplicates.
+# May force the cacnonic tag into existance by creating it.
+# Resolves canonic to tag name for foreign key relationship
 # usage:
 # set_synonym canonic synonym
-# Resolves canonic to tag name for foreign key relationship
 # TODO - cehck for duplicates, and re-parent any items currently using the synonym as parent
 set_synonym(){
   canonic=$1
@@ -412,38 +250,42 @@ set_synonym(){
   fi
 }
 
-# List all tags in a column
-# If a tag has synonyms, list each of them, indented, after the tag.
-# If a tag has a parent, it will be displayed under its parent with indentation.
-dump_tags(){
-  # First, get all root tags (tags with no parent)
-  SQL="SELECT name, long_name FROM tags WHERE parent IS NULL OR parent = '' ORDER BY name;"
-  root_tags=$(sql_fast "$SQL")
-
-  # Process each root tag
-  echo "$root_tags" | while IFS="$DB_DELIMITER" read -r tag_name long_name; do
-    # Display the root tag
-    if [ "$tag_type" = "container" ]; then
-      printf "\033[90m%s\033[0m\n" "$tag_name [root]"
-    else
-      printf "%s\n" "$tag_name"
-    fi
-
-    # Display synonyms for this tag
-    display_synonyms "$long_name" "  "
-
-    # Display child tags recursively
-    display_child_tags "$long_name" "|--"
-  done
+# Helper function that sets global variables (alternative to Pattern 1)
+# Usage: parse_tag_data "$(get_tag_data 'Dog')"
+#        echo "$tag_name $long_name $type $parent"
+# Note: Variables are GLOBAL (no local keyword) so available to caller
+# Can also be used to unset these variables.
+parse_tag_data() {
+  local csv_data="$1"
+  if [[ -z "$csv_data" ]]; then
+    tag_name=""
+    long_name=""
+    type=""
+    parent=""
+    return 1
+  fi
+  # These variables are NOT local, so they're set in the caller's scope
+  IFS="${DB_DELIMITER}" read -r tag_name long_name type parent <<< "$csv_data"
 }
 
-
-# Utility to check if the current scope has these variables set/
-dump_tag_values(){
-  echo "  name: $tag_name"
-  echo "  long_name: $long_name"
-  echo "  type: $type"
-  echo "  parent: $parent"
+# Housekeeping function to ensure long_name matches parentage
+# usage: update_long_name_to_match_parent "TagName"
+update_long_name_to_match_parent(){
+  tag_name=$1
+  parent=$(get_parent "$tag_name")
+  parent_long_name=$(get_long_name "$parent")
+  current_long_name=$(get_long_name "$tag_name")
+  expected_long_name="${parent_long_name}|${tag_name}"
+  if [[ "$current_long_name" != "$expected_long_name" ]] ; then
+    log_notice "Updating long_name of '$tag_name' from '$current_long_name' to '$expected_long_name' ."
+    SQL="
+    PRAGMA foreign_keys = ON;
+    UPDATE tags SET long_name = '$expected_long_name' WHERE name = '$tag_name';
+    "
+    sql_safe "$SQL"
+  else
+    log_debug "Long name of '$tag_name' is already correct: '$expected_long_name'."
+  fi
 }
 
 # Update the tag hierarchy based on tag names with slashes.
@@ -482,18 +324,41 @@ update_tag_hierarchy(){
   dump_tags
 }
 
-# Chop the rightmost part of a path off.
-# Basically identical to dirname?
-# inverse of get_shortname
-get_parent_name() {
-  long_name="$1"
-  local pipe_pattern='\|'
-  if [[ $long_name =~ $pipe_pattern ]] ; then
-    #tag_name="${long_name##*|}"  # Get everything after the last pipe
-    parent="${long_name%|*}"   # Get everything before the last pipe (parent hierarchy)
-  fi
-  return $parent;
+
+# Diagnostic: List all tags in a column
+# If a tag has synonyms, list each of them, indented, after the tag.
+# If a tag has a parent, it will be displayed under its parent with indentation.
+dump_tags(){
+  # First, get all root tags (tags with no parent)
+  SQL="SELECT name, long_name FROM tags WHERE parent IS NULL OR parent = '' ORDER BY name;"
+  root_tags=$(sql_fast "$SQL")
+
+  # Process each root tag
+  echo "$root_tags" | while IFS="$DB_DELIMITER" read -r tag_name long_name; do
+    # Display the root tag
+    if [ "$tag_type" = "container" ]; then
+      printf "\033[90m%s\033[0m\n" "$tag_name [root]"
+    else
+      printf "%s\n" "$tag_name"
+    fi
+
+    # Display synonyms for this tag
+    display_synonyms "$long_name" "  "
+
+    # Display child tags recursively
+    display_child_tags "$long_name" "|--"
+  done
 }
+
+
+# Diagnostic Utility to check if the current scope has these variables set/
+dump_tag_values(){
+  echo "  name: $tag_name"
+  echo "  long_name: $long_name"
+  echo "  type: $type"
+  echo "  parent: $parent"
+}
+
 
 # Helper function to display synonyms for a tag
 display_synonyms(){
@@ -563,62 +428,6 @@ parallalProcessFiles() {
     find "$@" -type f -print0 | xargs -0 -P 4 -I {} bash -c 'processFile "$1"' _ "{}"
 }
 
-# ensure
-# Db file locations is accessible, has an sqlite db, has the expected schema, and is responding.
-# Will try to create it if it's missing, or re-create it if it's corrupt.
-# Returns 0 on success, 1 on failure.
-# On failure, the caller may retry after a delay to handle transient locks.
-verify_database() {
-  log_notice "MEDIA_DB=$MEDIA_DB"
-
-  # Require sqlite3 or die
-  if ! command -v sqlite3 >/dev/null 2>&1; then
-    log_error "sqlite3 is required"
-    exit 1
-  fi
-
-  # Check if the database file exists
-  if [ ! -f "$MEDIA_DB" ]; then
-    log_notice "Database file $MEDIA_DB does not exist. Creating it..."
-    create_database
-    return 0
-  fi
-
-  # Capture stderr to detect specific errors
-  local error_output=$(mktemp)
-
-  # Check if it's a valid SQLite database
-  if ! echo "PRAGMA integrity_check;" | sqlite3 "$MEDIA_DB" > /dev/null 2>"$error_output"; then
-    local error_msg=$(cat "$error_output")
-    rm -f "$error_output"
-
-    # Check for lock vs corruption
-    if [[ "$error_msg" =~ "database is locked" ]]; then
-      log_error "Database is locked by another process. Waiting..."
-      sleep 1
-      return 1
-    elif [[ "$error_msg" =~ "not a database" ]] || [[ "$error_msg" =~ "malformed" ]]; then
-      log_error "Database file $MEDIA_DB is corrupt. Recreating it..."
-      drop_database
-      create_database
-    else
-      log_error "Database error: $error_msg"
-      return 1
-    fi
-  else
-    rm -f "$error_output"
-
-    # Verify expected tables exist
-    local tables=$(echo ".tables" | sqlite3 "$MEDIA_DB" 2>/dev/null)
-    if [[ ! "$tables" =~ "tags" ]] || [[ ! "$tables" =~ "synonyms" ]]; then
-      log_error "Database missing required tables. Recreating..."
-      drop_database
-      create_database
-    else
-      log_notice "Database file $MEDIA_DB exists and is valid."
-    fi
-  fi
-}
-
+# Initialize database when library is sourced
 verify_database
 open_database
