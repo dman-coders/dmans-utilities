@@ -1,0 +1,45 @@
+# Things to try with Jellyfin API:
+
+# List the collections
+./ListCollections
+
+# Select a random one
+COLLECTION_JSON=$( ./ListCollections | jq -r 'to_entries | .[now % length].value' )
+COLLECTION_NAME=$(echo $COLLECTION_JSON | jq -r '.Name')
+COLLECTION_ID=$(echo $COLLECTION_JSON | jq -r '.Id')
+echo "Selected collection: $COLLECTION_NAME $COLLECTION_ID"
+
+# List the items in that collections
+#COLLECTION_ITEMS=$( ./CollectionItems "$COLLECTION_ID" )
+
+# Select a random one
+ITEM_JSON=$( ./CollectionItems "$COLLECTION_ID"  | jq -r 'to_entries | .[now % length].value' )
+ITEM_NAME=$(echo $ITEM_JSON | jq -r '.Name')
+ITEM_ID=$(echo $ITEM_JSON | jq -r '.Id')
+echo "Selected Item: $ITEM_NAME $ITEM_ID"
+
+# retrieve details about that item
+
+# Find the file path on the server
+
+# convert that to alocal path
+
+# Investigate the local path.
+
+# It seems that [box set] collections can only collect videos, not images.
+# Try adding ain item (in this case an iomage) to a collections.
+IMAGE_ITEM_ID=a9d73876e9fb9682fa94c50a850e8fd1
+VIDEO_ITEM_ID=8cac5059e3a6a58d2776ab029f75dc60
+CURRENT_PARENT=f5c55291c1303a74c6daf09cd24c829e
+TARGET_COLLECTION=3373004dfb73c7f8fd0e3b9eea701099
+TARGET_COLLECTION=04f50e97aeb652dbaec8bf8fdc652e4b # Blowjob collection
+# List current members
+./CollectionItems $TARGET_COLLECTION | jq -r '.[] | "\(.Id), \(.Type), \"\(.Name)\",  \"\(.Path)\""'
+
+# Add video to Collection
+./AddItemToCollection "$TARGET_COLLECTION" "$VIDEO_ITEM_ID"
+# Adding Image Item to Collection
+./AddItemToCollection "$TARGET_COLLECTION" "$IMAGE_ITEM_ID"
+
+# List current members to confirm they are now included
+./CollectionItems $TARGET_COLLECTION | jq -r '.[] | "\(.Id), \(.Type), \"\(.Name)\",  \"\(.Path)\""'

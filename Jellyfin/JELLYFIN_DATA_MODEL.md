@@ -180,10 +180,17 @@ User-created collections of videos. BoxSets:
 - Group related videos together
 - Stored in `/var/lib/jellyfin/data/collections/`
 - Belong to the "boxsets" CollectionFolder
-- Videos can be in multiple BoxSets
+- Videos can be in multiple BoxSets **simultaneously** (critical for multi-tagging)
 - Have `DisplayOrder` to control sorting
 - **Do NOT support hierarchical nesting** - all collections are flat at the same level
 - Use naming conventions for hierarchy (e.g., "Location-Inside-Bedroom" or "Location: Inside: Bedroom")
+
+**Collection Membership Mechanism:**
+- Items do NOT have their `ParentId` changed when added to a collection
+- Item's `ParentId` always points to its original folder (e.g., library folder)
+- Collection membership is tracked separately via a database relationship (not ParentId)
+- Query items in a collection: `GET /Items?ParentId={BoxSetId}`
+- The API recognizes when ParentId is a BoxSet and returns member items (not folder children)
 
 ### Tag
 Simple string labels attached to items. Tags:
@@ -229,10 +236,12 @@ All items have a `ParentId` pointing to their container:
 
 ### Collections (BoxSets)
 BoxSets are special because they **reference** videos rather than containing them:
-- Videos remain in their original CollectionFolder
-- BoxSet creates a virtual grouping
-- A video can be in multiple BoxSets
-- Adding to BoxSet doesn't change video's `ParentId`
+- Videos remain in their original CollectionFolder with their original `ParentId`
+- BoxSet creates a virtual grouping via a separate database relationship
+- A video can be in multiple BoxSets **simultaneously** (many-to-many relationship)
+- Adding to BoxSet does NOT change video's `ParentId`
+- Member queries use: `GET /Items?ParentId={BoxSetId}` - API internally translates to collection membership lookup
+- Collection membership persists independently of file path changes (keyed by Item ID, not path)
 
 ### Tags and Genres
 Both are stored as simple string arrays on items:

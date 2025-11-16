@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+
+# FindItemCollections - Find all collections containing a given item
+#
+# Usage: FindItemCollections ITEM_ID
+#
+# Returns array of collections (with Id, Name, Path) that contain the item
+
+ITEM_ID="$1"
+
+if [ -z "$ITEM_ID" ]; then
+    echo "Usage: $0 ITEM_ID" >&2
+    echo "  ITEM_ID: Jellyfin item ID to search for" >&2
+    exit 1
+fi
+
+# Get all collections
+COLLECTIONS=$(./ListCollections)
+
+if [ -z "$COLLECTIONS" ]; then
+    echo "Error: Could not retrieve collections" >&2
+    exit 1
+fi
+
+# For each collection, check if item is a member
+RESULTS=$(echo "$COLLECTIONS" | jq -r '.[] | .Id' | while read COLL_ID; do
+    # Check if item is in this collection
+    MATCH=$(./Items --parent-id "$COLL_ID" --fields Id 2>/dev/null | \
+            jq --arg itemid "$ITEM_ID" 'map(select(.Id == $itemid)) | length')
+
+    if [ "$MATCH" == "1" ]; then
+        # Get collection details
+        echo "$COLLECTIONS" | jq --arg cid "$COLL_ID" '.[] | select(.Id == $cid)'
+    fi
+done | jq -s '.')
+
+echo "$RESULTS"

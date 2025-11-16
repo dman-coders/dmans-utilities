@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+
+# RemoveItemFromCollection - Remove item(s) from a Jellyfin collection
+#
+# Usage: RemoveItemFromCollection COLLECTION_ID ITEM_ID [ITEM_ID ...]
+#
+# Examples:
+#   RemoveItemFromCollection "5f408f9d50b7ddd6da73b69228fbf3c6" "item-id-1"
+#   RemoveItemFromCollection "5f408f9d50b7ddd6da73b69228fbf3c6" "item-id-1" "item-id-2"
+#
+# Returns: Success or error message
+
+COLLECTION_ID="$1"
+shift
+
+if [ -z "$COLLECTION_ID" ] || [ -z "$1" ]; then
+    echo "Usage: $0 COLLECTION_ID ITEM_ID [ITEM_ID ...]" >&2
+    echo "  COLLECTION_ID: Jellyfin collection/BoxSet ID" >&2
+    echo "  ITEM_ID: One or more item IDs to remove" >&2
+    exit 1
+fi
+
+# Join item IDs with comma
+ITEM_IDS=$(IFS=,; echo "$*")
+
+echo "Removing items from collection: $COLLECTION_ID" >&2
+echo "  Items: $ITEM_IDS" >&2
+
+# Make request
+RESPONSE=$(curl -s -w "\n%{http_code}" -X DELETE \
+    -H "Authorization: MediaBrowser Token=\"$JELLYFIN_API_KEY\"" \
+    "http://$JELLYFIN_HOST:$JELLYFIN_PORT/Collections/$COLLECTION_ID/Items?Ids=$ITEM_IDS")
+
+# Extract status and body (macOS compatible)
+STATUS=$(echo "$RESPONSE" | tail -1)
+BODY=$(echo "$RESPONSE" | sed '$d')
+
+if [ "$STATUS" = "204" ]; then
+    echo "" >&2
+    echo "Items removed successfully!" >&2
+    exit 0
+elif [ "$STATUS" = "200" ]; then
+    echo "" >&2
+    echo "Items removed successfully!" >&2
+    if [ -n "$BODY" ]; then
+        echo "$BODY" | jq '.'
+    fi
+    exit 0
+else
+    echo "" >&2
+    echo "Error (HTTP $STATUS): $BODY" >&2
+    exit 1
+fi

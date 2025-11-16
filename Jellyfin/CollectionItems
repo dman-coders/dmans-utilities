@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+
+# CollectionItems - List all items in a Jellyfin collection (BoxSet)
+#
+# Usage: CollectionItems COLLECTION_ID [--fields FIELD1,FIELD2,...]
+#
+# Returns array of items in the collection
+
+COLLECTION_ID="$1"
+shift
+
+# Pass through to Items script with ParentId filter
+./Items --parent-id "$COLLECTION_ID" "$@"

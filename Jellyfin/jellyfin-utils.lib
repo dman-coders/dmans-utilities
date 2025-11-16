@@ -1,0 +1,24 @@
+
+# Given a remote root path and a local root path
+# Map a remote file path to a local file path
+# Assunme
+# path on the server is
+# export JELLYFIN_ROOT_DATA_FOLDER=/mnt/raid1/X/HOWTO
+# And that same folder is currently mapped to a local folder
+# export JELLYFIN_LOCAL_DATA_FOLDER=/Volumes/x-files/HOWTO
+# Then jellyfin-local-path /mnt/raid1/X/HOWTO/movies/movie1.mkv
+# would return /Volumes/x-files/HOWTO/movies/movie1.mkv
+# Usage: jellyfin-local-path <relative-path>
+jellyfin-local-path() {
+  local remote_path="$1"
+  return "${remote_path/#$JELLYFIN_ROOT_DATA_FOLDER/$JELLYFIN_LOCAL_DATA_FOLDER}"
+}
+
+# Inverse of jellyfin-local-path
+# Given a local root path and a remote root path
+# Map a local file path to a remote file path
+# Usage: jellyfin-remote-path <relative-path>
+jellyfin-remote-path() {
+  local remote_path="$1"
+  return "${remote_path/#$JELLYFIN_ROOT_DATA_FOLDER/$JELLYFIN_LOCAL_DATA_FOLDER}"
+}
