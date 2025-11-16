@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 
-source "$(dirname "$0")/process_media.lib"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/"
+source "${SCRIPT_DIR}process_media.lib"
+#source "$(dirname "$0")/process_media.lib"
 
 # Serialize provenance of a file into portable embedded metadata.
 
@@ -26,8 +28,8 @@ function processFile {
 
     function hash_generator {
       #md5sum "$0" | cut -d' ' -f1
-      echo "md5sum-clean \"$1\" " >&2
-      md5sum-clean "$1"
+      echo "${SCRIPT_DIR}md5sum-clean \"$1\" " >&2
+      "$SCRIPT_DIR/md5sum-clean" "$1"
     }
 
     local exif_option="-quiet -overwrite_original"
@@ -97,7 +99,7 @@ function processFile {
       fi
     fi
 
-    process-dirname-as-keyword "$source_file"
+    $SCRIPT_DIR/process-dirname-as-keyword "$source_file"
 
     return 0
 }

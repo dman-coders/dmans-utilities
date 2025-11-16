@@ -34,7 +34,6 @@ else
 fi
 echo $TESTFILE;
 
-exit 0;
 
 TESTFILE="$FIXTURES_DIR/dog.jpg"
 if [[ ! -f "$TESTFILE" ]]; then

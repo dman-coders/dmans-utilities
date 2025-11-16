@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/"
+source "${SCRIPT_DIR}process_media.lib"
+
+# Some webp images are actually jpegs, and need to be renamed so things are less confusing
+
+# Given a file, list of files, or directory, including images,
+# Process them all by:
+# If it's a webp
+# verify it's really a webp
+# if it's actually a jpeg, rename/convert it to reflect that.
+
+# IF a change is made, it will output the replacement filename
+# outputs notning if no change, so check the return carefully.
+
+function processFile {
+
+    local exif_option="-quiet -overwrite_original"
+    local source_file="$1"
+
+    filename=$(basename -- "$source_file")
+    extension="${filename##*.}"
+    filename="${filename%.*}"
+
+    echo "Validating $source_file is OK" >&2
+
+    if [[ ! -f "${source_file}" ]]; then
+      echo "Error: $source_file is not a file"
+      return 1
+    fi
+    local image_size=$(exiftool -ImageSize "${source_file}")
+    if [[ -z "$image_size" ]] ; then
+      echo "$source_file is not an image or video $image_size"  >&2
+      return 1
+    fi
+
+    if [[ "$extension" != "webp" ]] ; then
+      # Not a webp. continue.
+      echo "$filename is not a webp"  >&2
+      return 1
+    fi
+    echo "$filename is allegedly a webp"  >&2
+
+    local mime_type=$(exiftool -s -S -MimeType "${source_file}")
+    if [[ "$mime_type" == "image/jpeg" ]] ; then
+      echo "$filename is actually a $mime_type" >&2
+      # Rename it.
+      new_name="$(dirname $source_file)/${filename}.jpg"
+      echo "Renaming it to $new_name" >&2
+      mv "$source_file" "$new_name"
+      # good news, this retains the OS metadata found by mdls.
+      # Put the new derivative into stdout for a caller to work with.
+      echo "$new_name"
+      return 0
+    fi
+    # otherwise good.
+    return 0
+}
+
+# Call the processFiles function with the provided arguments
+parallalProcessFiles "$@"

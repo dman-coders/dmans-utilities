@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 
-source "$(dirname "$0")/process_media.lib"
+#source "$(dirname "$0")/process_media.lib"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/"
+source "${SCRIPT_DIR}process_media.lib"
 
 # Do a lot of steps to tag, sort, and catalog webp images.
 
@@ -28,7 +30,7 @@ function processFile {
     echo "$identifier Processing $source_file ($mime_type)" >&2
 
     # Correct for misleading mime type. Do this before all else.
-    new_file=$( "correct-webp-jpegs" "${source_file}" )
+    new_file=$( "${SCRIPT_DIR}correct-webp-jpegs" "${source_file}" )
 
     if [ ! -z "$new_file" ] &&  [ ! "$new_file" == "$source_file" ]; then
         # a change happened.

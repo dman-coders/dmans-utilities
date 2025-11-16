@@ -133,7 +133,7 @@ close_database(){
 # Returns 0 on success, 1 on failure.
 # On failure, the caller may retry after a delay to handle transient locks.
 verify_database() {
-  log_notice "MEDIA_DB=$MEDIA_DB"
+  log_debug "MEDIA_DB=$MEDIA_DB"
 
   # Require sqlite3 or die
   if ! command -v sqlite3 >/dev/null 2>&1; then
@@ -179,7 +179,7 @@ verify_database() {
       drop_database
       create_database
     else
-      log_notice "Database file $MEDIA_DB exists and is valid."
+      log_info "Database file $MEDIA_DB exists and is valid."
     fi
   fi
 }

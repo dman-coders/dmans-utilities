@@ -14,9 +14,10 @@ Successfully extracted the duplicated `parallalProcessFiles` function from 4 scr
 # Expects the caller to define a 'processFile' function and export any additional
 # functions needed (e.g., export -f processWebpFile if processFile depends on it).
 # Note: Feedback from sub-processes may get jumbled due to parallel execution.
+# Note: Uses BSD xargs syntax (macOS) - -0: null-separated, -P: parallel, -I: replace
 parallalProcessFiles() {
     export -f processFile;
-    find "$@" -type f -print0 | xargs --null --max-procs=4 --replace={} bash -c 'processFile "$1"' _ "{}"
+    find "$@" -type f -print0 | xargs -0 -P 4 -I {} bash -c 'processFile "$1"' _ "{}"
 }
 ```
 

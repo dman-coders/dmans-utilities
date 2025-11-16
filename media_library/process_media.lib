@@ -3,14 +3,17 @@
 # utilities re-used by the media processing tools
 # Define MEDIA_DB path before initializing to override default location.
 
-UTIL_DIR=${MEDIA_LIB_DIR:-~/.media_processing}
+MEDIA_LIB_DIR=${MEDIA_LIB_DIR:-~/.media_processing}
 mkdir -p "$MEDIA_LIB_DIR"
 MEDIA_DB="${MEDIA_DB:-${MEDIA_LIB_DIR}/media.sqlite}"
 
 # Source SQLite database management functions
 LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$LIB_DIR/sqlite.lib"
-source "$LIB_DIR/../feedback.lib"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/"
+source "${SCRIPT_DIR}sqlite.lib"
+source "${SCRIPT_DIR}../feedback.lib"
 
 
 # Check if a tag exists in the database, and create it if not
@@ -425,6 +428,7 @@ display_child_tags(){
 # Note: Uses BSD xargs syntax (macOS) - -0: null-separated, -P: parallel, -I: replace
 parallalProcessFiles() {
     export -f processFile;
+    export SCRIPT_DIR;
     find "$@" -type f -print0 | xargs -0 -P 4 -I {} bash -c 'processFile "$1"' _ "{}"
 }
 
