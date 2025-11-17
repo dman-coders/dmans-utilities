@@ -173,3 +173,14 @@ jellyfin_normalize_path() {
         echo "$path"
     fi
 }
+
+# Given Item json, just display the useful bits
+jellyfin_filter_properties() {
+    local item_json="$1"
+
+    # If no argument, read from stdin
+    if [ -z "$item_json" ]; then
+        item_json=$(cat)
+    fi
+    echo "$item_json" | jq -r '. | {Id, Name, Type, Path, IsFolder, ParentId, Tags, Album, AlbumId}'
+}

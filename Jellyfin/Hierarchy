@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+
+# Usage
+# To run without debug messing up the layout,
+# need to explicitly pass the COLUMNS env var:
+# COLUMNS=$COLUMNS ./Hierarchy 2> /dev/null
+
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/jellyfin-utils.lib"
+
+# If set, only show folders and minimal info, not leaf items.
+SKIP_LEAF_ITEMS=false
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --skip-leaf-items)
+            SKIP_LEAF_ITEMS=true
+            shift
+            ;;
+        *)
+            log_error "Unknown option: $1"
+            exit 1
+            ;;
+    esac
+done
+
+
+summarize_item() {
+  #Given JSON input, summarize the item in a single line
+  local item_json="$1"
+
+  local indent="${2:-0}"
+  local indent_spaces=""
+  local i
+  for ((i=0; i<indent; i++)); do
+    indent_spaces+=" |"
+  done
+
+  local id name type path
+  id=$(echo "$item_json" | jq -r '.Id')
+  type=$(echo "$item_json" | jq -r '.Type')
+  name=$(echo "$item_json" | jq -r '.Name')
+  path=$(echo "$item_json" | jq -r '.Path')
+  # trim the known server root path off this for brevity
+  path="${path#$JELLYFIN_ROOT_DATA_FOLDER}"
+  isFolder=$(echo "$item_json" | jq -r '.IsFolder')
+
+  # Use tput for colors (no hardcoded escape codes)
+  local blue=$(tput setaf 4)
+  local reset=$(tput sgr0)
+
+  if [[ "$isFolder" == "true" ]]; then
+    name="${blue}${name}${reset}"
+  fi
+
+  indent_and_id="${indent_spaces}- $id"
+  #COLUMNS=$(tput cols)
+  printf "$COLUMNS %-45.45s %10s %-50.50s %s\n" "$indent_and_id" "[$type]" "'$name'" "'$path'" | cut -c1-$COLUMNS
+}
+
+# Try to dump everything
+TOP_ITEM_JSON=$( ./Items --type AggregateFolder | jq -r '.[0]' )
+TOP_ITEM=$( echo "$TOP_ITEM_JSON" | jq -r '.Id' )
+
+log_info "Retrieving item: $ITEM_ID"
+
+summarize_item "$TOP_ITEM_JSON"
+
+# Now recursively walk down the hierarchy
+walk_hierarchy() {
+  local parent_id="$1"
+  local indent="${2:-1}"
+  local children_json child_count i child_json child_id isFolder
+
+  # Normal lookup does not include Path info. Specify it.
+  children_json=$( ./Items --parent-id "$parent_id" --fields Path --no-recursive )
+  child_count=$( echo "$children_json" | jq 'length' )
+  # log_info "Found $child_count children for parent ID $parent_id at indent level $indent"
+
+  for ((i=0; i<child_count; i++)); do
+    child_json=$( echo "$children_json" | jq -r ".[$i]" )
+    isFolder=$( echo "$child_json" | jq -r '.IsFolder' )
+    if [[ "$isFolder" != "true" && $SKIP_LEAF_ITEMS == "true" ]]; then
+      # Skip leaf items when in lite mode
+      continue;
+    fi
+
+    child_id=$( echo "$child_json" | jq -r '.Id' )
+    summarize_item "$child_json" "$indent"
+
+    if [ "$isFolder" == "true" ]; then
+      walk_hierarchy "$child_id" $((indent + 1))
+    fi
+  done
+}
+
+walk_hierarchy "$TOP_ITEM"

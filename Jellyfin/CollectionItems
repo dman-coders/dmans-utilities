@@ -15,4 +15,4 @@ jellyfin_require_args 1 $((1 + $#)) "Usage: $0 COLLECTION_ID [--fields ...]" || 
 log_info "Retrieving collection members: $COLLECTION_ID"
 
 # Pass through to Items script with ParentId filter
-./Items --parent-id "$COLLECTION_ID" "$@"
+./Items --parent-id "$COLLECTION_ID" --fields ParentId "$@"

@@ -31,7 +31,7 @@ if jellyfin_success; then
     COLLECTION_ID=$(echo "$API_BODY" | jq -r '.Id')
     log_success "Collection created successfully"
     log_notice "  Collection ID: $COLLECTION_ID"
-    echo "$API_BODY" | jq '.'
+    echo "$COLLECTION_ID"
 else
     log_error "Failed to create collection: $API_BODY"
     exit 1

@@ -171,26 +171,33 @@ Image files (jpg, png, etc.). Photos:
 ### PhotoAlbum
 Folders containing photos. Albums:
 - Are filesystem directories represented as Jellyfin items
-- Belong to a CollectionFolder via `ParentId`
+- Belong to a CollectionFolder, type "PhotoAlbum" via `ParentId`
 - Can have nested structure (sub-albums)
 - Track `ChildCount` and `RecursiveItemCount`
+- may be added to collections (BoxSets)
+- May be a child of a `Folder`
 
 ### BoxSet (Collection)
 User-created collections of videos. BoxSets:
 - Group related videos together
 - Stored in `/var/lib/jellyfin/data/collections/`
-- Belong to the "boxsets" CollectionFolder
+- A BoxSet is a child of a 'Folder'
+- Belong to the Collection `Folder` called 'collections'
 - Videos can be in multiple BoxSets **simultaneously** (critical for multi-tagging)
 - Have `DisplayOrder` to control sorting
 - **Do NOT support hierarchical nesting** - all collections are flat at the same level
 - Use naming conventions for hierarchy (e.g., "Location-Inside-Bedroom" or "Location: Inside: Bedroom")
+- A BoxSet may contain items of type Video or 'Photo`
+- May also contain other BoxSets (nested collections) or PhotoAlbums
 
-**Collection Membership Mechanism:**
-- Items do NOT have their `ParentId` changed when added to a collection
+*Collection Membership Mechanism:**
+- Member Items do NOT have their `ParentId` changed when added to a collection
 - Item's `ParentId` always points to its original folder (e.g., library folder)
 - Collection membership is tracked separately via a database relationship (not ParentId)
 - Query items in a collection: `GET /Items?ParentId={BoxSetId}`
 - The API recognizes when ParentId is a BoxSet and returns member items (not folder children)
+- It is possible to add a Collection to another Collection.
+  - a Nested Item will have `"IsFolder": true, "Type": "BoxSet",`
 
 ### Tag
 Simple string labels attached to items. Tags:
