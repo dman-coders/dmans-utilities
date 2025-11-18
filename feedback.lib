@@ -1,18 +1,36 @@
+# Color control via environment variables
+# Set NO_COLOR=1 to disable colors
+# Set FORCE_COLOR=1 to force colors (even when piped)
+# Color variables can be overridden: DEBUG_COLOR, INFO_COLOR, ERROR_COLOR, SUCCESS_COLOR
 
+if [ "${NO_COLOR:-0}" = "1" ] || (! [ -t 2 ] && [ "${FORCE_COLOR:-0}" != "1" ]); then
+    # Disable colors if NO_COLOR is set or output is not a TTY (and FORCE_COLOR not set)
+    DEBUG_COLOR=""
+    INFO_COLOR=""
+    ERROR_COLOR=""
+    SUCCESS_COLOR=""
+    COLOR_RESET=""
+else
+    # ANSI color codes that work on both light and dark backgrounds
+    DEBUG_COLOR="${DEBUG_COLOR:-\033[36m}"      # Cyan (debug/diagnostic)
+    INFO_COLOR="${INFO_COLOR:-\033[34m}"        # Blue (informational)
+    ERROR_COLOR="${ERROR_COLOR:-\033[31m}"      # Red (errors)
+    SUCCESS_COLOR="${SUCCESS_COLOR:-\033[32m}"  # Green (success)
+    COLOR_RESET="\033[0m"
+fi
 
 log_notice(){
   echo "$1"  >&2
 }
 log_debug(){
-  printf "\033[93m$1\033[0m\n"  >&2
+  printf "${DEBUG_COLOR}%s${COLOR_RESET}\n" "$1" >&2
 }
 log_info(){
-  # ligh blue
-  printf "\033[94m$1\033[0m\n"  >&2
+  printf "${INFO_COLOR}%s${COLOR_RESET}\n" "$1" >&2
 }
 log_error(){
-  printf "\033[31m$1\033[0m\n" >&2
+  printf "${ERROR_COLOR}%s${COLOR_RESET}\n" "$1" >&2
 }
 log_success(){
-  printf "\033[32m$1\033[0m\n" >&2
+  printf "${SUCCESS_COLOR}%s${COLOR_RESET}\n" "$1" >&2
 }
