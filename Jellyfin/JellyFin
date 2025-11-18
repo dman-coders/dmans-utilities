@@ -1,0 +1,753 @@
+#!/usr/bin/env bash
+
+# JellyFin - Unified Jellyfin API command library
+# Consolidated script library for all Jellyfin API operations
+# Usage: JellyFin <command> [arguments]
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../feedback.lib"
+source "$SCRIPT_DIR/jellyfin-utils.lib"
+
+# ============================================================================
+# COMMAND FUNCTIONS
+# ============================================================================
+
+# TestConnection - Test Jellyfin API connectivity
+#
+# Wrapper around: GET /System/Info (GetSystemInfo)
+# Usage: TestConnection
+#
+TestConnection() {
+    log_info "Testing connection to Jellyfin server..."
+    log_debug "Server: ${JELLYFIN_API_URL}"
+
+    curl -v -H "Authorization: MediaBrowser Token=\"$JELLYFIN_API_KEY\"" \
+        "${JELLYFIN_API_URL}/" 2>&1 | grep -E "^< HTTP|^* Connected"
+
+    jellyfin_request GET "/System/Info"
+
+    if jellyfin_success; then
+        log_success "Connected successfully"
+        local SERVER_NAME=$(echo "$API_BODY" | jq -r '.ServerName')
+        local SERVER_VERSION=$(echo "$API_BODY" | jq -r '.Version')
+        log_notice "Server: $SERVER_NAME (v$SERVER_VERSION)"
+        return 0
+    else
+        log_error "Connection failed (HTTP $API_STATUS)"
+        return 1
+    fi
+}
+
+# SystemInfo - Get Jellyfin system information
+#
+# API: GET /System/Info
+# OperationId: GetSystemInfo
+# Usage: SystemInfo
+#
+SystemInfo() {
+    eval curl -s $JELLYFIN_CURL_OPTIONS \
+         "${JELLYFIN_API_URL}/System/Info" \
+         | jq
+}
+
+# ListCollections - List all Jellyfin collections (BoxSets)
+#
+# Wrapper around: GET /Items (with IncludeItemTypes=BoxSet)
+# OperationId: GetItems
+# Usage: ListCollections [--fields FIELD1,FIELD2,...]
+#
+# Returns JSON array of collections
+#
+ListCollections() {
+    local FIELDS="Path,ParentId,ItemCount"
+    [ "$1" = "--fields" ] && FIELDS="$2"
+
+    log_debug "Listing all collections"
+
+    local ENDPOINT="/Items?IncludeItemTypes=BoxSet&Recursive=true&UserId=$JELLYFIN_USERID&Fields=$FIELDS"
+
+    jellyfin_request GET "$ENDPOINT"
+    echo "$API_BODY" | jq '.Items | map({Name, Id, ParentId, ItemCount: .RecursiveItemCount, Path})'
+}
+
+# Items - Query Jellyfin items with flexible filtering
+#
+# API: GET /Items
+# OperationId: GetItems
+# Note: Subset of API parameters exposed. Full API supports 50+ query parameters.
+#       Tags and Genres parameters map to 'filters' in raw API.
+#
+# Usage: Items [options]
+#
+# Options:
+#   --type TYPE              Include item types (Video, Photo, PhotoAlbum, BoxSet)
+#   --recursive              Search recursively (default: true)
+#   --no-recursive           Disable recursive search
+#   --limit N                Limit results (default: 1000)
+#   --fields FIELD1,FIELD2   Fields to include
+#   --tags TAG               Filter by tag
+#   --genres GENRE           Filter by genre
+#   --parent-id ID           Filter by parent folder ID
+#   --start-index N          Pagination start index
+#   --help                   Show this help
+#
+Items() {
+    local INCLUDE_TYPES=""
+    local RECURSIVE=true
+    local LIMIT=1000
+    local FIELDS=""
+    local EXTRA_PARAMS=""
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --type)
+                INCLUDE_TYPES="$2"
+                EXTRA_PARAMS="${EXTRA_PARAMS}&IncludeItemTypes=$2"
+                shift 2
+                ;;
+            --recursive)
+                RECURSIVE=true
+                shift
+                ;;
+            --no-recursive)
+                RECURSIVE=false
+                shift
+                ;;
+            --limit)
+                LIMIT="$2"
+                shift 2
+                ;;
+            --fields)
+                FIELDS="$2"
+                shift 2
+                ;;
+            --tags)
+                EXTRA_PARAMS="${EXTRA_PARAMS}&Tags=$2"
+                shift 2
+                ;;
+            --genres)
+                EXTRA_PARAMS="${EXTRA_PARAMS}&Genres=$2"
+                shift 2
+                ;;
+            --parent-id)
+                EXTRA_PARAMS="${EXTRA_PARAMS}&ParentId=$2"
+                shift 2
+                ;;
+            --start-index)
+                EXTRA_PARAMS="${EXTRA_PARAMS}&StartIndex=$2"
+                shift 2
+                ;;
+            --help)
+                log_notice "Items - Query Jellyfin items with flexible filtering"
+                log_notice ""
+                log_notice "Usage: JellyFin Items [options]"
+                log_notice ""
+                log_notice "Options:"
+                log_notice "  --type TYPE              Include item types (Video, Photo, PhotoAlbum, BoxSet)"
+                log_notice "  --recursive              Search recursively (default: true)"
+                log_notice "  --no-recursive           Disable recursive search"
+                log_notice "  --limit N                Limit results (default: 1000)"
+                log_notice "  --fields FIELD1,FIELD2   Fields to include"
+                log_notice "  --tags TAG               Filter by tag"
+                log_notice "  --genres GENRE           Filter by genre"
+                log_notice "  --parent-id ID           Filter by parent folder ID"
+                log_notice "  --start-index N          Pagination start index"
+                log_notice "  --help                   Show this help"
+                return 0
+                ;;
+            *)
+                log_error "Unknown option: $1"
+                return 1
+                ;;
+        esac
+    done
+
+    log_debug "Querying items (type=$INCLUDE_TYPES, limit=$LIMIT)"
+
+    local ENDPOINT="/Items?Recursive=$RECURSIVE&Limit=$LIMIT"
+    [ -n "$FIELDS" ] && ENDPOINT="${ENDPOINT}&Fields=$FIELDS"
+    ENDPOINT="${ENDPOINT}${EXTRA_PARAMS}"
+
+    jellyfin_request GET "$ENDPOINT"
+
+    if jellyfin_success; then
+        echo "$API_BODY" | jq '.Items'
+        return 0
+    else
+        log_error "Query failed (HTTP $API_STATUS): $API_BODY"
+        return 1
+    fi
+}
+
+# MediaFolders - List all media libraries (CollectionFolders)
+#
+# API: GET /Library/MediaFolders
+# OperationId: GetMediaFolders
+# Optional API Parameters: isHidden (currently not exposed)
+# Usage: MediaFolders
+#
+MediaFolders() {
+    log_debug "Retrieving media folders"
+
+    jellyfin_request GET "/Library/MediaFolders"
+    echo "$API_BODY" | jq '.Items | map([.Name, .CollectionType, .Type, .LocationType, .Path])'
+}
+
+# GetItem - Get detailed information about a Jellyfin item
+#
+# API: GET /Users/{userId}/Items/{itemId}
+# OperationId: GetItem
+# Parameters: userId (automatic), itemId (required), fields (optional)
+#
+# Usage: GetItem ITEM_ID [--fields FIELD1,FIELD2,...]
+#
+# Examples:
+#   JellyFin GetItem "abc123def456"
+#   JellyFin GetItem "abc123def456" --fields Id,Name,Path,Tags
+#
+GetItem() {
+    local ITEM_ID="$1"
+    local FIELDS=""
+
+    jellyfin_require_args 1 $# "Usage: JellyFin GetItem ITEM_ID [--fields FIELD1,FIELD2,...]" || return 1
+
+    # Handle --fields flag
+    if [ "$2" = "--fields" ]; then
+        FIELDS="$3"
+    fi
+
+    log_info "Retrieving item: $ITEM_ID"
+
+    local ENDPOINT="/Users/$JELLYFIN_USERID/Items/$ITEM_ID"
+    [ -n "$FIELDS" ] && ENDPOINT="${ENDPOINT}?Fields=$FIELDS"
+
+    jellyfin_request GET "$ENDPOINT"
+    jellyfin_handle_response "" "true"
+}
+
+# GetItemByPath - Get Jellyfin item by filesystem path
+#
+# Wrapper around: GET /Items (client-side path filtering)
+# OperationId: GetItems
+# Note: Jellyfin API does not support direct path-based item lookup.
+#       Implementation queries all items and filters by exact path match client-side.
+#       For better performance with large libraries, consider using GetItem with known item ID.
+#
+# Usage: GetItemByPath "/path/to/file.mp4"
+#
+# Returns JSON with item details including Id, Name, Path, Tags, Genres, Type, etc.
+#
+GetItemByPath() {
+    local FILE_PATH="$1"
+
+    jellyfin_require_args 1 $# "Usage: JellyFin GetItemByPath \"/path/to/file\"" || return 1
+
+    # if filepath is not root-absolute, prepend the root data folder
+    if [[ "$FILE_PATH" != /* ]]; then
+        FILE_PATH="${JELLYFIN_ROOT_DATA_FOLDER:-/mnt/raid1/X/HOWTO}/$FILE_PATH"
+    fi
+
+    # Normalize the path (remove trailing slashes, resolve symlinks if needed)
+    FILE_PATH=$(cd "$(dirname "$FILE_PATH")" 2>/dev/null && echo "$PWD/$(basename "$FILE_PATH")" || echo "$FILE_PATH")
+
+    log_debug "Looking up item by path: $FILE_PATH"
+
+    # Fetch all items with Path field
+    local RESPONSE=$(curl -s -H "Authorization: MediaBrowser Token=\"$JELLYFIN_API_KEY\"" \
+        "${JELLYFIN_API_URL}/Items?Recursive=true&IncludeItemTypes=Video,Photo&Fields=Path,Name,Id,Tags,Genres,Type,Container,RunTimeTicks,PremiereDate,ImageTags&Limit=1000")
+
+    # Filter results to find exact path match
+    local ITEM=$(echo "$RESPONSE" | jq --arg path "$FILE_PATH" '.Items[] | select(.Path == $path)' 2>/dev/null)
+
+    if [ -z "$ITEM" ] || [ "$ITEM" = "null" ]; then
+        log_error "Item not found at path: $FILE_PATH"
+        log_debug "Available paths (sample):"
+        echo "$RESPONSE" | jq -r '.Items[0:3] | .[] | .Path' 2>/dev/null | while read path; do
+            log_debug "  $path"
+        done
+        return 1
+    fi
+
+    # Output the item as JSON
+    echo "$ITEM" | jq '.'
+}
+
+# UpdateItem - Update a Jellyfin item (general purpose item update)
+#
+# API: POST /Items/{itemId}
+# OperationId: UpdateItem
+# Parameters: itemId (required), request body with BaseItemDto fields to update
+#
+# This is the underlying API for all item modifications.
+# It accepts a JSON payload with BaseItemDto fields to update.
+# For tag updates specifically, see UpdateTags() which uses this function.
+#
+# Usage: UpdateItem ITEM_ID '{"Tags": [...], "Name": "...", ...}'
+#
+# Examples:
+#   JellyFin UpdateItem "abc123" '{"Name": "New Name"}'
+#   JellyFin UpdateItem "abc123" '{"Tags": ["tag1", "tag2"]}'
+#
+UpdateItem() {
+    local ITEM_ID="$1"
+    local PAYLOAD="$2"
+
+    jellyfin_require_args 2 $# "Usage: JellyFin UpdateItem ITEM_ID '{\"field\": value, ...}'" || return 1
+
+    if [ -z "$PAYLOAD" ]; then
+        log_error "Payload cannot be empty"
+        return 1
+    fi
+
+    log_notice "Updating item: $ITEM_ID"
+    log_debug "Payload: $PAYLOAD"
+
+    jellyfin_request POST "/Items/$ITEM_ID" "$PAYLOAD"
+
+    if jellyfin_success; then
+        log_success "Item updated successfully"
+        echo "$API_BODY" | jq '.' 2>/dev/null || echo "$API_BODY"
+        return 0
+    else
+        log_error "Failed to update item: $API_BODY"
+        return 1
+    fi
+}
+
+# Genres - List all available genres in the Jellyfin library
+#
+# API: GET /Genres
+# OperationId: GetGenres
+# Note: Using native /Genres endpoint (not /Items/Filters)
+# Available parameters: startIndex, limit, searchTerm, parentId, fields, excludeItemTypes,
+#                      includeItemTypes, isFavorite, imageTypeLimit, enableImageTypes,
+#                      nameStartsWithOrGreater, nameStartsWith, nameLessThan, sortBy, sortOrder
+#
+# Usage: Genres
+#
+Genres() {
+    log_debug "Retrieving available genres"
+
+    jellyfin_request GET "/Genres?UserId=$JELLYFIN_USERID"
+    echo "$API_BODY" | jq '.Items'
+}
+
+# Tags - List all available tags in the Jellyfin library
+#
+# API: GET /Items/Filters
+# Note: Jellyfin API does not have a dedicated /Tags endpoint.
+#       Tags are queried via /Items/Filters which returns available tags from items.
+#
+# Usage: Tags
+#
+Tags() {
+    log_debug "Retrieving available tags"
+
+    jellyfin_request GET "/Items/Filters?UserId=$JELLYFIN_USERID"
+    echo "$API_BODY" | jq ".Tags"
+}
+
+# CreateCollection - Create a new Jellyfin collection
+#
+# API: POST /Collections
+# OperationId: CreateCollection
+# API Parameters: name (required), ids (optional), parentId (optional), isLocked (optional)
+# Note: Only exposing name and ids parameters. parentId and isLocked not currently exposed.
+#
+# Usage: CreateCollection "Collection Name" [ItemIds]
+#
+# Examples:
+#   JellyFin CreateCollection "My Collection"
+#   JellyFin CreateCollection "Best Videos" "id1,id2,id3"
+#
+CreateCollection() {
+    local NAME="$1"
+    local ITEM_IDS="$2"
+
+    jellyfin_require_args 1 $# "Usage: JellyFin CreateCollection \"Collection Name\" [ItemIds]" || return 1
+
+    # URL encode the name
+    local ENCODED_NAME=$(printf %s "$NAME" | jq -sRr @uri)
+
+    local URL_PARAMS="?Name=$ENCODED_NAME&UserId=$JELLYFIN_USERID"
+    [ -n "$ITEM_IDS" ] && URL_PARAMS="${URL_PARAMS}&Ids=$ITEM_IDS"
+
+    log_notice "Creating collection: $NAME"
+    [ -n "$ITEM_IDS" ] && log_debug "  Adding items: $ITEM_IDS"
+
+    jellyfin_request POST "/Collections$URL_PARAMS"
+
+    if jellyfin_success; then
+        local COLLECTION_ID=$(echo "$API_BODY" | jq -r '.Id')
+        log_success "Collection created successfully"
+        log_notice "  Collection ID: $COLLECTION_ID"
+        echo "$COLLECTION_ID"
+        return 0
+    else
+        log_error "Failed to create collection: $API_BODY"
+        return 1
+    fi
+}
+
+# CollectionItems - List all items in a Jellyfin collection
+#
+# Wrapper around: GET /Items (with ParentId filter)
+# OperationId: GetItems
+# Note: Collections are BoxSet items, queried by setting ParentId to collection ID
+#
+# Usage: CollectionItems COLLECTION_ID [--fields FIELD1,FIELD2,...]
+#
+CollectionItems() {
+    local COLLECTION_ID="$1"
+    shift
+
+    jellyfin_require_args 1 $((1 + $#)) "Usage: JellyFin CollectionItems COLLECTION_ID [--fields ...]" || return 1
+
+    log_info "Retrieving collection members: $COLLECTION_ID"
+
+    # Call Items function with ParentId filter
+    Items --parent-id "$COLLECTION_ID" --fields ParentId "$@"
+}
+
+# AddItemToCollection - Add item(s) to a Jellyfin collection
+#
+# API: POST /Collections/{collectionId}/Items
+# OperationId: AddToCollection
+# Parameters: collectionId (required), ids (required, comma-separated)
+#
+# Usage: AddItemToCollection COLLECTION_ID ITEM_ID [ITEM_ID ...]
+#
+# Examples:
+#   JellyFin AddItemToCollection "5f408f9d50b7ddd6da73b69228fbf3c6" "item-id-1"
+#   JellyFin AddItemToCollection "5f408f9d50b7ddd6da73b69228fbf3c6" "item-id-1" "item-id-2"
+#
+AddItemToCollection() {
+    local COLLECTION_ID="$1"
+    shift
+
+    jellyfin_require_args 2 $((1 + $#)) "Usage: JellyFin AddItemToCollection COLLECTION_ID ITEM_ID [ITEM_ID ...]" || return 1
+    [ $# -gt 0 ] || { log_error "At least one ITEM_ID is required"; return 1; }
+
+    local ITEM_IDS=$(jellyfin_join_ids "," "$@")
+
+    log_info "Adding items to collection: $COLLECTION_ID"
+    log_debug "  Items: $ITEM_IDS"
+
+    jellyfin_request POST "/Collections/$COLLECTION_ID/Items?Ids=$ITEM_IDS"
+    jellyfin_handle_response "Items added to collection successfully"
+}
+
+# RemoveItemFromCollection - Remove item(s) from a Jellyfin collection
+#
+# API: DELETE /Collections/{collectionId}/Items
+# OperationId: RemoveFromCollection
+# Parameters: collectionId (required), ids (required, comma-separated)
+#
+# Usage: RemoveItemFromCollection COLLECTION_ID ITEM_ID [ITEM_ID ...]
+#
+# Examples:
+#   JellyFin RemoveItemFromCollection "5f408f9d50b7ddd6da73b69228fbf3c6" "item-id-1"
+#   JellyFin RemoveItemFromCollection "5f408f9d50b7ddd6da73b69228fbf3c6" "item-id-1" "item-id-2"
+#
+RemoveItemFromCollection() {
+    local COLLECTION_ID="$1"
+    shift
+
+    jellyfin_require_args 2 $((1 + $#)) "Usage: JellyFin RemoveItemFromCollection COLLECTION_ID ITEM_ID [ITEM_ID ...]" || return 1
+    [ $# -gt 0 ] || { log_error "At least one ITEM_ID is required"; return 1; }
+
+    local ITEM_IDS=$(jellyfin_join_ids "," "$@")
+
+    log_info "Removing items from collection: $COLLECTION_ID"
+    log_debug "  Items: $ITEM_IDS"
+
+    jellyfin_request DELETE "/Collections/$COLLECTION_ID/Items?Ids=$ITEM_IDS"
+    jellyfin_handle_response "Items removed from collection successfully"
+}
+
+# FindItemCollections - Find all collections containing a given item
+#
+# Wrapper around: GET /Items (multiple queries)
+# OperationId: GetItems
+# Note: Jellyfin API does not have a direct endpoint to find collections by item.
+#       Implementation queries all collections, then checks each for item membership.
+#       For better performance with many collections, consider optimizing with batch queries.
+#
+# Usage: FindItemCollections ITEM_ID
+#
+# Returns: JSON array of collections containing the item (for diagnostics)
+#
+FindItemCollections() {
+    local ITEM_ID="$1"
+
+    jellyfin_require_args 1 $# "Usage: JellyFin FindItemCollections ITEM_ID" || return 1
+
+    log_info "Finding collections for item: $ITEM_ID"
+
+    # Get all collections
+    local COLLECTIONS=$(ListCollections)
+
+    if [ -z "$COLLECTIONS" ]; then
+        log_error "Could not retrieve collections"
+        return 1
+    fi
+
+    # For each collection, check if item is a member
+    echo "$COLLECTIONS" | jq -r '.[] | .Id' | while read COLL_ID; do
+        local MATCH=$(Items --parent-id "$COLL_ID" --fields Id 2>/dev/null | \
+                jq --arg itemid "$ITEM_ID" 'map(select(.Id == $itemid)) | length')
+
+        if [ "$MATCH" == "1" ]; then
+            echo "$COLLECTIONS" | jq --arg cid "$COLL_ID" '.[] | select(.Id == $cid)'
+        fi
+    done | jq -s '.'
+}
+
+# UpdateTags - Update tags on a Jellyfin item
+#
+# Wrapper around: UpdateItem (which uses POST /Items/{itemId})
+# OperationId: UpdateItem (via UpdateItem function)
+# Note: Jellyfin API does not have a dedicated tag update endpoint.
+#       This function constructs a Tags array and delegates to UpdateItem.
+#       Must send complete Tags array; tags are not merged at API level.
+#
+# Usage:
+#   JellyFin UpdateTags ITEM_ID "tag1" "tag2" "tag3"
+#   JellyFin UpdateTags ITEM_ID --append "tag1" "tag2"
+#   JellyFin UpdateTags ITEM_ID --replace "tag1" "tag2"
+#   JellyFin UpdateTags ITEM_ID --clear
+#
+# Modes:
+#   Default (--replace): Replace all tags with new ones
+#   --append: Add new tags to existing ones (fetches current tags first)
+#   --clear: Remove all tags
+#
+# Output: Updated Tags array
+#
+UpdateTags() {
+    local ITEM_ID="$1"
+    shift
+
+    if [ -z "$ITEM_ID" ]; then
+        log_error "Usage: JellyFin UpdateTags ITEM_ID [--append|--replace|--clear] [tags...]"
+        log_error "  ITEM_ID: Jellyfin item ID"
+        log_error "  Default mode: Replace all tags (use --replace explicitly to be clear)"
+        log_error "  --append: Add tags to existing ones"
+        log_error "  --clear: Remove all tags"
+        return 1
+    fi
+
+    local MODE="replace"
+    local TAGS_JSON="[]"
+
+    # Parse mode and tags
+    if [ "$1" = "--append" ]; then
+        MODE="append"
+        shift
+
+        # Fetch current tags via GetItem, suppress logging
+        local CURRENT=$(GetItem "$ITEM_ID" --fields Tags 2>&1 | jq -R 'select(startswith("{")) | fromjson?' 2>/dev/null | jq -s '.[0]' 2>/dev/null)
+        local EXISTING_TAGS=$(echo "$CURRENT" | jq '.Tags // []' 2>/dev/null)
+
+        # Merge new tags with existing
+        local NEW_TAGS=()
+        while [ $# -gt 0 ]; do
+            NEW_TAGS+=("$1")
+            shift
+        done
+
+        TAGS_JSON=$(echo "$EXISTING_TAGS" | jq ". + $(printf '%s\n' "${NEW_TAGS[@]}" | jq -R . | jq -s .)")
+
+    elif [ "$1" = "--clear" ]; then
+        MODE="clear"
+        TAGS_JSON="[]"
+        shift
+
+    elif [ "$1" = "--replace" ]; then
+        MODE="replace"
+        shift
+        local NEW_TAGS=()
+        while [ $# -gt 0 ]; do
+            NEW_TAGS+=("$1")
+            shift
+        done
+        TAGS_JSON=$(printf '%s\n' "${NEW_TAGS[@]}" | jq -R . | jq -s .)
+
+    else
+        # Default: replace mode
+        local NEW_TAGS=()
+        while [ $# -gt 0 ]; do
+            NEW_TAGS+=("$1")
+            shift
+        done
+        TAGS_JSON=$(printf '%s\n' "${NEW_TAGS[@]}" | jq -R . | jq -s .)
+    fi
+
+    if [ -z "$TAGS_JSON" ] || [ "$TAGS_JSON" = "null" ]; then
+        TAGS_JSON="[]"
+    fi
+
+    # Build JSON payload
+    local PAYLOAD=$(jq -n --argjson tags "$TAGS_JSON" '{Tags: $tags}')
+
+    log_debug "Tags (mode: $MODE): $(echo "$TAGS_JSON" | jq '.')"
+
+    # Update the item via UpdateItem function
+    local RESULT=$(UpdateItem "$ITEM_ID" "$PAYLOAD" 2>/dev/null)
+
+    if [ $? -eq 0 ]; then
+        # Extract and display just the Tags from the result
+        echo "$RESULT" | jq '.Tags'
+        return 0
+    else
+        log_error "Failed to update tags for item: $ITEM_ID"
+        return 1
+    fi
+}
+
+# Hierarchy - Display Jellyfin library hierarchy as a tree
+#
+# Wrapper around: GET /Items (multiple recursive queries)
+# OperationId: GetItems
+# Note: Composes multiple Items queries with ParentId to build hierarchical tree display.
+#       To run without debug messing up the layout, explicitly pass COLUMNS:
+#       COLUMNS=$COLUMNS JellyFin Hierarchy 2> /dev/null
+#
+# Usage: Hierarchy [--skip-leaf-items]
+#
+Hierarchy() {
+    local SKIP_LEAF_ITEMS=false
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --skip-leaf-items)
+                SKIP_LEAF_ITEMS=true
+                shift
+                ;;
+            *)
+                log_error "Unknown option: $1"
+                return 1
+                ;;
+        esac
+    done
+
+    # Helper function to summarize an item
+    summarize_item() {
+        local item_json="$1"
+        local indent="${2:-0}"
+        local indent_spaces=""
+        local i
+
+        for ((i=0; i<indent; i++)); do
+            indent_spaces+=" |"
+        done
+
+        local id name type path isFolder
+        id=$(echo "$item_json" | jq -r '.Id')
+        type=$(echo "$item_json" | jq -r '.Type')
+        name=$(echo "$item_json" | jq -r '.Name')
+        path=$(echo "$item_json" | jq -r '.Path')
+        # trim the known server root path off this for brevity
+        path="${path#$JELLYFIN_ROOT_DATA_FOLDER}"
+        isFolder=$(echo "$item_json" | jq -r '.IsFolder')
+
+        # Use tput for colors (no hardcoded escape codes)
+        local blue=$(tput setaf 4)
+        local reset=$(tput sgr0)
+
+        if [[ "$isFolder" == "true" ]]; then
+            name="${blue}${name}${reset}"
+        fi
+
+        indent_and_id="${indent_spaces}- $id"
+        printf "$COLUMNS %-45.45s %10s %-50.50s %s\n" "$indent_and_id" "[$type]" "'$name'" "'$path'" | cut -c1-$COLUMNS
+    }
+
+    # Helper function to walk hierarchy recursively
+    walk_hierarchy() {
+        local parent_id="$1"
+        local indent="${2:-1}"
+        local children_json child_count i child_json child_id isFolder
+
+        # Normal lookup does not include Path info. Specify it.
+        children_json=$( Items --parent-id "$parent_id" --fields Path --no-recursive )
+        child_count=$( echo "$children_json" | jq 'length' )
+
+        for ((i=0; i<child_count; i++)); do
+            child_json=$( echo "$children_json" | jq -r ".[$i]" )
+            isFolder=$( echo "$child_json" | jq -r '.IsFolder' )
+            if [[ "$isFolder" != "true" && $SKIP_LEAF_ITEMS == "true" ]]; then
+                # Skip leaf items when in lite mode
+                continue
+            fi
+
+            child_id=$( echo "$child_json" | jq -r '.Id' )
+            summarize_item "$child_json" "$indent"
+
+            if [ "$isFolder" == "true" ]; then
+                walk_hierarchy "$child_id" $((indent + 1))
+            fi
+        done
+    }
+
+    # Get the root item
+    local TOP_ITEM_JSON=$( Items --type AggregateFolder | jq -r '.[0]' )
+    local TOP_ITEM=$( echo "$TOP_ITEM_JSON" | jq -r '.Id' )
+
+    log_info "Displaying Jellyfin library hierarchy"
+
+    summarize_item "$TOP_ITEM_JSON"
+
+    # Now recursively walk down the hierarchy
+    walk_hierarchy "$TOP_ITEM"
+}
+
+# ============================================================================
+# COMMAND DISPATCHER
+# ============================================================================
+
+# RunCommand - Execute a command by name
+#
+# Usage: RunCommand <command> [arguments...]
+#
+# This function checks if a command function exists and executes it,
+# providing abstract delegation rather than prescriptive routing.
+#
+RunCommand() {
+    local COMMAND="$1"
+    shift
+
+    # Check if function exists and call it
+    if declare -f "$COMMAND" > /dev/null 2>&1; then
+        "$COMMAND" "$@"
+        return $?
+    else
+        log_error "Unknown command: $COMMAND"
+        log_notice "Available commands:"
+        log_notice "  System: TestConnection, SystemInfo, MediaFolders, Genres, Tags"
+        log_notice "  Items: Items, GetItem, GetItemByPath, Hierarchy"
+        log_notice "  Collections: ListCollections, CreateCollection, CollectionItems, FindItemCollections"
+        log_notice "  Modify: UpdateItem, AddItemToCollection, RemoveItemFromCollection, UpdateTags"
+        return 1
+    fi
+}
+
+# ============================================================================
+# MAIN
+# ============================================================================
+
+if [ $# -eq 0 ]; then
+    log_error "No command specified"
+    log_notice "Usage: JellyFin <command> [arguments]"
+    log_notice ""
+    log_notice "Available commands:"
+    log_notice "  System: TestConnection, SystemInfo, MediaFolders, Genres, Tags"
+    log_notice "  Items: Items, GetItem, GetItemByPath, Hierarchy"
+    log_notice "  Collections: ListCollections, CreateCollection, CollectionItems, FindItemCollections"
+    log_notice "  Modify: UpdateItem, AddItemToCollection, RemoveItemFromCollection, UpdateTags"
+    exit 1
+fi
+
+RunCommand "$@"
