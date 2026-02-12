@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Usage:
-# 	./git-extract.sh git@repo_site.com:/my_repo.git origin/folder/customlib/ customlib
+# 	./git-extract git@repo_site.com:/my_repo.git origin/folder/customlib/ customlib
 #
 # This will take the named folder from within a git repo, bringing history,
 # and set up a newly inited repo for it, stand-alone.

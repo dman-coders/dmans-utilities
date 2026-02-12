@@ -6,7 +6,7 @@
 # Deciding to branch the module off and use it as a dependency instead.
 
 # Usage:
-# 	./git_move.sh git@repo_site.com:/my_repo.git origin/folder/path/ /destination/repo/path/ new/folder/path/  
+# 	./git-move git@repo_site.com:/my_repo.git origin/folder/path/ /destination/repo/path/ new/folder/path/
 
 repo=$1
 folder=$2

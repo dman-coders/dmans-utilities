@@ -9,10 +9,10 @@
  *
  * To set up a full static site mirror from anywhere else:
  * # Make an Apache vhost named, eg mirror.sitename.local, pointing to an empty directory
- * # place this proxy script where it can be found, eg in {DocumentRoot}/wrapper/proxy_404_fetcher.php
+ * # place this proxy script where it can be found, eg in {DocumentRoot}/wrapper/web-proxy-404-fetcher.php
  * # in the htaccess fil for that site (or even in the Vhost)
  * add the following line as a 404 handler
- *  ErrorDocument 404 /wrapper/proxy_404_fetcher.php?target_base=http://sitename.com/
+ *  ErrorDocument 404 /wrapper/web-proxy-404-fetcher.php?target_base=http://sitename.com/
  *
  * Now when you visit http://mirror.sitename.local/ content from http://sitename.com/ will be served in its place.
  *
@@ -20,7 +20,7 @@
  * - you will see directory listings of folders that were created before the index file was retrieved.
  * To avoid that, Also add the lines
  *  Options -Indexes
- *  ErrorDocument 403 /wrapper/proxy_404_fetcher.php?target_base=http://sitename.com/
+ *  ErrorDocument 403 /wrapper/web-proxy-404-fetcher.php?target_base=http://sitename.com/
  * and local dirs will not be indexed, instead they will error, and the error will use the same fetcher behavior as the 404 
  *
  *
@@ -42,7 +42,7 @@
  * (create it)
  * Add
  *
- * ErrorDocument 404 /sites/default/files/imported/proxy_404_fetcher.php?target_base=http://sitename.com/&local_base=/sites/default/files/
+ * ErrorDocument 404 /sites/default/files/imported/web-proxy-404-fetcher.php?target_base=http://sitename.com/&local_base=/sites/default/files/
  *
  * COPY this file into that named location, and adjust some paths as needed.
  *
