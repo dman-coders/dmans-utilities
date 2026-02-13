@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+
+# Check metadata for Gherkin matching
+CHECK_ID="check_log_a_message"
+CHECK_GROUP="internal"
+CHECK_WHEN="log that {MESSAGE}"
+CHECK_DESCRIPTION="Log a message"
+
+# What gets returned as a value during this check?
+# If any useful set, memo it with the following Var name..
+CHECK_RETURN_VARNAME=""
+
+# Required parameters
+REQUIRED_PARAMETERS=( )
+
+
+check() {
+    echo "$MESSAGE"
+    audit_report_result "$CHECK_ID" "OK" "{}" "$MESSAGE"
+    exit 0
+}

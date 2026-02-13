@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+
+# Check metadata for Gherkin matching
+CHECK_ID="check_project_default_branch"
+CHECK_GROUP="project"
+CHECK_WHEN="the default branch is active"
+CHECK_DESCRIPTION="Verify the default branch id, and remember it as PLATFORM_BRANCH"
+CHECK_RETURN_VARNAME=PLATFORM_BRANCH
+
+# Required parameters
+REQUIRED_PARAMETERS=( PLATFORM_PROJECT PLATFORM_CLI )
+
+# Literal command for documentation/logging
+literal_check_command="$PLATFORM_CLI -y project:info --project=$PLATFORM_PROJECT default_branch"
+
+check() {
+    log_info "Retrieving project info from Upsun API..."
+
+    PLATFORM_BRANCH=$(eval $literal_check_command 2>/dev/null)
+    echo "$PLATFORM_BRANCH"
+    log_success "Project ${PLATFORM_PROJECT} default_branch is '${PLATFORM_BRANCH}'"
+    # verify it's active.
+    literal_check_command="${PLATFORM_CLI} -y environment:info --project=${PLATFORM_PROJECT} --environment=${PLATFORM_BRANCH} status"
+    ENVIRONMENT_STATUS=$(eval $literal_check_command 2>/dev/null)
+
+    if [[ "$ENVIRONMENT_STATUS" == "active" ]]; then
+        log_success "Environment  '${PLATFORM_BRANCH}' on project '${PLATFORM_PROJECT}' is ${ENVIRONMENT_STATUS}"
+        exit 0
+    else
+        log_error "Environment  ${PLATFORM_BRANCH} on project ${PLATFORM_PROJECT} is ${ENVIRONMENT_STATUS}"
+        log_error "    $literal_check_command"
+        log_error "To fix: It might need activating before we can continue"
+        exit 1
+    fi
+}

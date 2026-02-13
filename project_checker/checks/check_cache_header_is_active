@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+
+# Check metadata for Gherkin matching
+CHECK_ID="check_cache_header_is_active"
+CHECK_GROUP="cache"
+CHECK_WHEN="check the the cache-header is active"
+CHECK_DESCRIPTION="Verify cache-control header does not disable caching"
+CHECK_RETURN_VARNAME="CACHE_CONTROL_HEADER"
+
+# Required parameters
+REQUIRED_PARAMETERS=( URL )
+
+# Literal command for documentation/logging
+literal_check_command="curl --head --silent --location --max-time 10 $URL | grep -i cache-control"
+
+check() {
+    log_info "Checking for a cache headers in the URLs HTTP response..."
+
+    # Get headers and extract cache-control header
+    HEADERS=$(curl --head --silent --location --max-time 10 "$URL" 2>/dev/null)
+    if [[ $? -ne 0 ]]; then
+        log_error "Failed to fetch headers from $URL (timeout or connection error)"
+        exit 2
+    fi
+    
+    CACHE_CONTROL=$(echo "$HEADERS" | grep -i "cache-control:" | sed 's/cache-control: *//i')
+    
+    echo "$CACHE_CONTROL"
+    
+    if [[ -z "$CACHE_CONTROL" ]]; then
+        log_error "No cache-control header found for $URL"
+        log_error "Cache-control header is required for proper caching configuration"
+        log_error "To fix: Add cache-control header with appropriate caching directives"
+        exit 1
+    fi
+    
+    # Check if cache-control contains no-cache (which disables caching)
+    if [[ "$CACHE_CONTROL" =~ no-cache ]]; then
+        log_error "Cache-control header disables caching: $CACHE_CONTROL"
+        log_error "Cache header contains 'no-cache' directive"
+        log_error "To fix: Remove 'no-cache' from cache-control header configuration"
+        exit 1
+    else
+        log_success "Cache-control header allows caching: $CACHE_CONTROL"
+        log_info "Cache is active - no 'no-cache' directive found"
+        exit 0
+    fi
+}

@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+
+# Check metadata for Gherkin matching
+CHECK_ID="check_project_organization"
+CHECK_GROUP="project"
+CHECK_WHEN="the organization is valid"
+CHECK_DESCRIPTION="Fetch organization ID"
+CHECK_RETURN_VARNAME="PROJECT_ORGANIZATION_ID"
+
+# Required parameters
+REQUIRED_PARAMETERS=( PLATFORM_PROJECT PLATFORM_CLI )
+
+# Literal command for documentation/logging
+#literal_check_command="$PLATFORM_CLI org:info --project=${PLATFORM_PROJECT} id 2> /dev/null"
+literal_check_command="$PLATFORM_CLI org:info --project=${PLATFORM_PROJECT} id 2> /dev/null"
+
+check() {
+    log_info "Retrieving project organization ID from Upsun API..."
+    PROJECT_ORGANIZATION_ID=$(eval $literal_check_command 2>/dev/null)
+    echo "$PROJECT_ORGANIZATION_ID"
+    
+    if [[ "$PROJECT_ORGANIZATION_ID" != "" ]]; then
+        log_success "Project ${PLATFORM_PROJECT} organization ID is $PROJECT_ORGANIZATION_ID"
+        exit 0
+    else
+        log_error "Failed to retrieve PROJECT_ORGANIZATION_ID for Project ${PLATFORM_PROJECT} "
+        exit 1
+    fi
+}

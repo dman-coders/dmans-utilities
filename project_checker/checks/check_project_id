@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+
+# Check metadata for Gherkin matching
+CHECK_ID="check_project_id"
+CHECK_GROUP="project"
+CHECK_WHEN="the project ID is valid for the provider"
+CHECK_DESCRIPTION="Verify project and provider (PLATFORM_CLI) is valid"
+# What gets returned as a value during this check?
+# If any useful set, memo it with the following Var name..
+CHECK_RETURN_VARNAME=PROJECT_STATUS
+
+# Required parameters
+REQUIRED_PARAMETERS=( PLATFORM_PROJECT PLATFORM_CLI )
+
+
+# Literal command for documentation/logging
+literal_check_command="$PLATFORM_CLI  subscription:info --project=$PLATFORM_PROJECT status"
+
+check() {
+    PROJECT_STATUS=$(run_command_quoted "$literal_check_command" )
+    log_success "PROJECT_STATUS IS $PROJECT_STATUS"
+    echo "$PROJECT_STATUS"
+
+    if [[ "$PROJECT_STATUS" == "active" ]]; then
+        log_success "Project ${PLATFORM_PROJECT} is available on $PLATFORM_CLI"
+        exit 0
+    else
+        log_error "Project ${PLATFORM_PROJECT} is not accessible on $PLATFORM_CLI, Check the ID and provider match"
+        log_error "  '$literal_check_command' returned status: $PROJECT_STATUS"
+        exit 1
+    fi
+}

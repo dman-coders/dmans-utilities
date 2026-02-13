@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+
+# Check metadata for Gherkin matching
+CHECK_ID="check_url_route"
+CHECK_GROUP="web"
+CHECK_WHEN="the URL is set"
+CHECK_DESCRIPTION="Retrieve the primary URL from the environment's routes"
+CHECK_RETURN_VARNAME=URL
+
+# Required parameters
+REQUIRED_PARAMETERS=( PLATFORM_PROJECT PLATFORM_CLI PLATFORM_BRANCH )
+
+# Literal command for documentation/logging
+literal_check_command="$PLATFORM_CLI --project=\$PLATFORM_PROJECT --environment=\$PLATFORM_BRANCH url --primary --pipe"
+
+check() {
+    local PRIMARY_URL
+
+    log_info "Detecting Primary URL from environment $PLATFORM_BRANCH..."
+
+    # Try to get primary URL first
+    PRIMARY_URL=$(eval $literal_check_command 2>/dev/null | head -1)
+    # This call may return the literal string "No URLs found" on SDTOUT (not STDERR)
+    # Apparently this happens when "main environment has no routes"
+    # This is apparently possible with Dedicated....
+    # SPECIAL CASE: if it's Dedicated, derive an URL from the configured DOMAIN
+    if [[ "$PRIMARY_URL" = "No URLs found." ]]; then
+      log_warning "No URLs defined for this environment at all, Maybe this is an oddly configured Dedicated instance."
+      log_warning "Using DOMAIN instead. Doublke-check this is correct."
+      literal_check_command="$PLATFORM_CLI -y environment:info --project=$PLATFORM_PROJECT --environment=$PLATFORM_BRANCH default_domain"
+      DOMAIN=$(eval $literal_check_command 2>/dev/null | head -1)
+      PROBABLE_URL="https://$DOMAIN/"
+      # Need to follow this request in case it's a www-prefix or something, I need the final resolved URL
+      log_info "Checking to see if '$PROBABLE_URL' resolves to a redirect."
+      PRIMARY_URL=$(curl -ILs -o /dev/null -w '%{url_effective}' "$PROBABLE_URL")
+    fi
+
+    # Fallback to first HTTPS URL if no primary route defined
+    if [[ -z "$PRIMARY_URL" ]]; then
+        log_warning "No primary route defined, using first HTTPS URL"
+        PRIMARY_URL=$($PLATFORM_CLI --project=$PLATFORM_PROJECT --environment=$PLATFORM_BRANCH url --pipe 2>/dev/null | grep -E '^https://' | head -1)
+    fi
+
+    if [[ -z "$PRIMARY_URL" ]]; then
+        log_error "Failed to get any URL from environment $PLATFORM_BRANCH"
+        log_error "Verify that the environment has routes configured"
+        echo ""
+        exit 1
+    fi
+
+    log_success "Primary URL from environment: $PRIMARY_URL"
+    echo "$PRIMARY_URL"
+    exit 0
+}

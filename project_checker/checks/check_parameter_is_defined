@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+
+# Check metadata for Gherkin matching
+CHECK_ID="check_parameter_is_defined"
+CHECK_GROUP="internal"
+CHECK_WHEN="a parameter named {VARIABLE_NAME} is defined"
+CHECK_DESCRIPTION="Verify an environment variable is defined"
+
+# Required parameters
+REQUIRED_PARAMETERS=( VARIABLE_NAME )
+
+check() {
+
+    if [[ -z "$VARIABLE_NAME" ]]; then
+        log_error "VARIABLE_NAME not provided by runner"
+        exit 1
+    fi
+    
+    # Use indirect variable expansion to check if the named variable has a value
+    param_value="${!VARIABLE_NAME}"
+    log_notice "# VARIABLE_NAME=$VARIABLE_NAME; $VARIABLE_NAME=$param_value"
+    
+    if [[ -n "$param_value" ]]; then
+        log_success "Variable $VARIABLE_NAME is defined: $param_value"
+        echo "$param_value"
+        exit 0
+    else
+        log_error "Variable $VARIABLE_NAME is not defined"
+        log_error "To fix: export $VARIABLE_NAME=appropriate-value"
+        exit 1
+    fi
+}

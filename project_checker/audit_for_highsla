@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+cd $(dirname $0)
+
+export PLATFORM_PROJECT=$1
+shift
+export LOGLEVEL=${LOGLEVEL:-5}
+
+python3 gherkin_runner.py audit_for_highsla.feature $@

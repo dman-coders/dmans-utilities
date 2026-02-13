@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+
+# Try out a sample of the checks to demonstrate how they work.
+
+# Source feedback functions for consistent logging
+SCRIPT_DIR="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
+source "${SCRIPT_DIR}/feedback_functions.lib"
+
+export PLATFORM_PROJECT=3x4fowkdbgsbe
+
+# Use `source check-atomic` as that will properly declare and set env vars to the context.
+#
+# Just using `check` will work for one check, but not for session persistence.
+# Can use the return value:
+#     DOMAIN=$(check check_domain_is_set)
+# or just use
+#     source check check_domain_is_set
+# and DOMAIN will be set.
+# check-atomic protects from killing the session if the check decides to exit.
+
+export PLATFORM_PROJECT=pjwpl3mwluww6
+
+source ./check-atomic check_project_id
+echo $PROJECT_STATUS
+
+source ./check-atomic check_project_default_branch
+echo $PLATFORM_BRANCH
+
+source ./check-atomic check_domain_is_set
+echo $DOMAIN
+
+# for checks and things, should use the URL form routes, not DOMAIN.
+# THis is to deal with redirects and multi-url behaviours.
+
+source ./check-atomic check_domain_uses_fastly
+echo $FASTLY_SERVICE_ID

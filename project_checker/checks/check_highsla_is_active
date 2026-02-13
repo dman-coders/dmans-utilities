@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+
+# Check metadata for Gherkin matching
+CHECK_ID="check_highsla_is_active"
+CHECK_GROUP="HighSLA"
+CHECK_WHEN="HighSLA is already active"
+CHECK_DESCRIPTION="Verify if there is already an entry for this project in checkmate."
+CHECK_RETURN_VARNAME=CHECKMATE_YAML
+
+# Required parameters
+REQUIRED_PARAMETERS=( PLATFORM_PROJECT PLATFORM_CHECKMATE_FOLDER )
+
+# Literal command for documentation/logging
+literal_check_command="cd $PLATFORM_CHECKMATE_FOLDER; git checkout master --quiet ; git pull origin master --quiet ; grep -rl $PLATFORM_PROJECT . | grep yaml"
+
+check() {
+    log_info "Checking for a $PLATFORM_PROJECT yaml file in te folder..."
+
+    CHECKMATE_YAML=$(bash -c "$literal_check_command")
+    if [[ ! -z "$CHECKMATE_YAML"  ]]; then
+        echo "$CHECKMATE_YAML"
+        log_success "Found checkmate yaml $CHECKMATE_YAML in $PLATFORM_CHECKMATE_FOLDER"
+        exit 0
+    else
+        log_error "Found no checkmate yaml for $PLATFORM_PROJECT in $PLATFORM_CHECKMATE_FOLDER"
+        exit 1
+    fi
+}

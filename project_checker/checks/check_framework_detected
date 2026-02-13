@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+
+# Check metadata for Gherkin matching
+CHECK_ID="check_framework_detected"
+CHECK_GROUP="web"
+CHECK_WHEN="the framework is detected"
+CHECK_DESCRIPTION="Detect application framework (Drupal, WordPress, Symfony, Rails, PHP) from HTTP headers and content"
+CHECK_RETURN_VARNAME=DETECTED_FRAMEWORK
+
+# Required parameters
+REQUIRED_PARAMETERS=( $URL )
+
+# Literal command for documentation/logging
+literal_check_command="curl -s -L --max-time 10 --max-filesize 10485760 "$URL" 2>/dev/null | head -c 50000"
+
+check() {
+    local response
+    local content
+    local detected_framework
+
+    log_notice "Detecting framework for $URL..."
+
+    # Get HTTP headers
+    response=$(curl -s -I -L --max-time 10 "$URL" 2>/dev/null)
+
+    # Get page content (first 50KB)
+    content=$(eval "$literal_check_command")
+
+    # Check for framework signatures in headers and content
+    if echo "$response" | grep -qi "x-generator.*drupal.*10"; then
+        detected_framework="drupal10"
+        log_success "Detected: Drupal 10 (via x-generator header)"
+    elif echo "$response" | grep -qi "x-generator.*drupal.*9"; then
+        detected_framework="drupal9"
+        log_success "Detected: Drupal 9 (via x-generator header)"
+    elif echo "$response" | grep -qi "x-generator.*drupal.*8"; then
+        detected_framework="drupal8"
+        log_success "Detected: Drupal 8 (via x-generator header)"
+    elif echo "$response" | grep -qi "x-generator.*drupal.*7"; then
+        detected_framework="drupal7"
+        log_success "Detected: Drupal 7 (via x-generator header)"
+    elif echo "$content" | grep -q "x-magento-init"; then
+        detected_framework="magento2"
+        log_success "Detected: Magento 2 (via x-magento-init in content)"
+    elif echo "$content" | grep -q "Mage.Cookies.path"; then
+        detected_framework="magento1"
+        log_success "Detected: Magento 1 (via Mage.Cookies.path in content)"
+    elif echo "$response" | grep -qi "x-powered-by.*wordpress"; then
+        detected_framework="wordpress"
+        log_success "Detected: WordPress (via x-powered-by header)"
+    elif echo "$content" | grep -qi "wp-content\|wp-includes"; then
+        detected_framework="wordpress"
+        log_success "Detected: WordPress (via wp-content in HTML)"
+    elif echo "$response" | grep -qi "x-symfony-cache"; then
+        detected_framework="symfony"
+        log_success "Detected: Symfony (via x-symfony-cache header)"
+    elif echo "$content" | grep -qi "symfony"; then
+        detected_framework="symfony"
+        log_success "Detected: Symfony (via content analysis)"
+    elif echo "$response" | grep -qi "x-powered-by.*rails"; then
+        detected_framework="rails"
+        log_success "Detected: Rails (via x-powered-by header)"
+    else
+        detected_framework="php"
+        log_info "No specific framework detected, defaulting to: php"
+    fi
+
+    # Output the detected framework
+    echo "$detected_framework"
+
+    exit 0
+}

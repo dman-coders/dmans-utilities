@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+
+# Check metadata for Gherkin matching
+CHECK_ID="check_highsla_is_not_active"
+CHECK_GROUP="HighSLA"
+CHECK_WHEN="HighSLA is not already active"
+CHECK_DESCRIPTION="Verify there is no existing entry for this project in checkmate."
+CHECK_RETURN_VARNAME=""
+
+# Required parameters
+REQUIRED_PARAMETERS=( PLATFORM_PROJECT PLATFORM_CHECKMATE_FOLDER )
+
+# Literal command for documentation/logging
+#literal_check_command="cd $PLATFORM_CHECKMATE_FOLDER; grep -rl $PLATFORM_PROJECT ."
+# Need to muffle the git output as it's a bit noisy and irrelevant.
+# We search for an URL that includes the project ID inside the text of the yamls,
+# as the filenames don't always match the project ID, but do always mention the project: URL
+literal_check_command="cd $PLATFORM_CHECKMATE_FOLDER; git checkout master --quiet ; git pull origin master --quiet;  grep -rl projects/$PLATFORM_PROJECT . "
+
+check() {
+    log_info "Checking for a $PLATFORM_PROJECT yaml file in te folder..."
+
+    CHECKMATE_YAML="$(eval "$literal_check_command")"
+    echo "$CHECKMATE_YAML"
+
+    if [[ -z "$CHECKMATE_YAML" ]]; then
+        log_success "No existing checkmate yaml found for $PLATFORM_PROJECT in $PLATFORM_CHECKMATE_FOLDER"
+        log_info "Project is clear for new HighSLA setup"
+        exit 0
+    else
+        log_error "Found existing checkmate yaml: $CHECKMATE_YAML in $PLATFORM_CHECKMATE_FOLDER"
+        log_error "HighSLA is already configured for this project"
+        log_error "To fix: Either use existing configuration or remove: $CHECKMATE_YAML"
+        exit 1
+    fi
+}

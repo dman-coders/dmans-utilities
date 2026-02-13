@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+
+# Avoid using check_domain -> DOMAIN to deduce the URL. Use check_url_route -> PRIMARY_URL instead.
+
+# Check metadata for Gherkin matching
+CHECK_ID="check_domain_is_set"
+CHECK_GROUP="web"
+CHECK_WHEN="the domain is set"
+CHECK_DESCRIPTION="Verify the domain for the current project and branch, and remember it as DOMAIN"
+CHECK_RETURN_VARNAME=DOMAIN
+
+# Required parameters
+REQUIRED_PARAMETERS=( PLATFORM_PROJECT PLATFORM_CLI PLATFORM_BRANCH )
+
+# Literal command for documentation/logging
+literal_check_command="$PLATFORM_CLI -y environment:info --project=$PLATFORM_PROJECT --environment=$PLATFORM_BRANCH default_domain"
+
+check() {
+    log_info "Checking for a configured domain on the project..."
+
+    DOMAIN=$(eval $literal_check_command 2>/dev/null)
+    # PLATFORM CLI sometimes returns unwanted newlines?
+    DOMAIN="${DOMAIN%"${DOMAIN##*[![:space:]\n\r]*}"}"
+    DOMAIN="$(echo "$DOMAIN" | tr -d '\n')"
+
+    echo "$DOMAIN"
+
+    literal_check_command="$PLATFORM_CLI -y environment:info --project=$PLATFORM_PROJECT --environment=$PLATFORM_BRANCH has_domains"
+    HAS_DOMAINS=$(eval $literal_check_command 2>/dev/null)
+    if [[ "$HAS_DOMAINS" == "true" ]]; then
+        log_success "Project ${PLATFORM_PROJECT}:${PLATFORM_BRANCH} domain is '${DOMAIN}' "
+        exit 0
+    else
+        log_error "Project ${PLATFORM_PROJECT}:${PLATFORM_BRANCH} does not have domains set"
+        exit 1
+    fi
+}

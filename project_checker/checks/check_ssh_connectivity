@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+
+# Check metadata for Gherkin matching
+CHECK_ID="check_ssh_connectivity"
+CHECK_GROUP="environment"
+CHECK_WHEN="SSH connectivity to the environment is working"
+CHECK_DESCRIPTION="Verify SSH access to the project environment"
+CHECK_RETURN_VARNAME="SSH_URI"
+
+# Required parameters
+REQUIRED_PARAMETERS=( PLATFORM_PROJECT PLATFORM_BRANCH PLATFORM_CLI PLATFORM_APP )
+
+# Literal command for documentation/logging
+literal_check_command="$PLATFORM_CLI --project=$PLATFORM_PROJECT --environment=$PLATFORM_BRANCH --app=$PLATFORM_APP ssh 'echo \"SSH connection successful\"'"
+
+check() {
+    log_info "Attempting to make as ssh connection to the project environment..."
+    export PLATFORMSH_CLI_NO_INTERACTION=1
+    SSH_OUTPUT=$(eval "$literal_check_command" 2>&1)
+    exit_code=$?
+
+    # Ee tested that the automatic login worked.
+    # For information al purposes, record the URI for ssh. Not strictly necessary, but informative.
+    fetch_uri_command="$PLATFORM_CLI --project=$PLATFORM_PROJECT --environment=$PLATFORM_BRANCH --app=$PLATFORM_APP ssh --pipe "
+    log_notice "$fetch_uri_command"
+    SSH_URI=$(eval "$fetch_uri_command" 2>&1);
+    exit_code=$?
+    if [[ $exit_code -eq 0 ]]; then
+      echo "$SSH_URI"
+    fi
+
+    if [[ $exit_code -eq 0 ]]; then
+        log_success "SSH connectivity to project $PLATFORM_PROJECT environment $PLATFORM_BRANCH successful"
+        exit 0
+    else
+        log_error "SSH connectivity to project $PLATFORM_PROJECT environment $PLATFORM_BRANCH failed"
+        log_error "Exit code: $exit_code"
+        log_error "Output: $SSH_OUTPUT"
+        log_error "To fix: Check SSH keys are configured correctly, environment is active, and you have access"
+        exit 1
+    fi
+}

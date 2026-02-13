@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+
+# Check metadata for Gherkin matching
+CHECK_ID="check_deployment_status"
+CHECK_GROUP="project"
+CHECK_WHEN="the latest deployment completed successfully"
+CHECK_DESCRIPTION="Verify the most recent deployment succeeded"
+CHECK_RETURN_VARNAME=""
+
+# Required parameters
+REQUIRED_PARAMETERS=( PLATFORM_PROJECT PLATFORM_BRANCH PLATFORM_CLI )
+
+# Literal command for documentation/logging
+literal_check_command="$PLATFORM_CLI activity:list --project=$PLATFORM_PROJECT --environment=$PLATFORM_BRANCH --type=environment.push --limit=1 --format=plain --columns=state,result"
+
+check() {
+    log_info "Checking the environments status from the API..."
+
+    DEPLOYMENT_INFO=$($PLATFORM_CLI activity:list --project=$PLATFORM_PROJECT --environment=$PLATFORM_BRANCH --type=environment.push --limit=1 --format=plain --columns=state,result 2>&1)
+    exit_code=$?
+
+    if [[ $exit_code -ne 0 ]]; then
+        log_error "Could not retrieve deployment status"
+        log_error "Exit code: $exit_code"
+        log_error "Output: $DEPLOYMENT_INFO"
+        exit 2
+    fi
+
+    echo "$DEPLOYMENT_INFO"
+
+    if [[ -z "$DEPLOYMENT_INFO" ]]; then
+        log_error "No deployment information found for environment $PLATFORM_BRANCH"
+        exit 1
+    fi
+
+    # Check if the latest deployment was successful (state=complete, result=success)
+    if echo "$DEPLOYMENT_INFO" | grep -q "complete.*success"; then
+        log_success "Latest deployment completed successfully"
+        exit 0
+    else
+        log_error "Latest deployment failed or is still in progress"
+        log_error "Deployment status: $DEPLOYMENT_INFO"
+        log_error "To fix: Review deployment logs with: $PLATFORM_CLI activity:log --project=$PLATFORM_PROJECT --environment=$PLATFORM_BRANCH"
+        exit 1
+    fi
+}

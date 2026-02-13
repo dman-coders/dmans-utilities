@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# Query the audit database for check results
+# Usage:
+#   ./query_audit --project=PROJECT_ID --check=CHECK_ID
+#   ./query_audit --project=PROJECT_ID  (all checks for project)
+#   ./query_audit --check=CHECK_ID      (check across all projects)
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../audit_reporting.lib"
+
+# Parse arguments
+PLATFORM_PROJECT=""
+CHECK_ID=""
+FORMAT="table"
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --project=*) PLATFORM_PROJECT="${1#*=}"; shift ;;
+    --check=*) CHECK_ID="${1#*=}"; shift ;;
+    --format=*) FORMAT="${1#*=}"; shift ;;
+    --help|-h)
+      echo "Usage: $0 [OPTIONS]"
+      echo ""
+      echo "Query audit database for check results"
+      echo ""
+      echo "Options:"
+      echo "  --project=PROJECT_ID   Filter by project ID"
+      echo "  --check=CHECK_ID       Filter by check ID"
+      echo "  --format=FORMAT        Output format: table, csv, json (default: table)"
+      echo "  --help                 Show this help"
+      echo ""
+      echo "Examples:"
+      echo "  $0 --project=3x4fowkdbgsbe --check=check_highsla_is_active"
+      echo "  $0 --project=3x4fowkdbgsbe"
+      echo "  $0 --check=check_deployment_status"
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1"
+      exit 1
+      ;;
+  esac
+done
+
+# Build WHERE clause
+WHERE_CLAUSES=()
+if [[ -n "$PLATFORM_PROJECT" ]]; then
+  WHERE_CLAUSES+=("project='$PLATFORM_PROJECT'")
+fi
+if [[ -n "$CHECK_ID" ]]; then
+  WHERE_CLAUSES+=("check_id='$CHECK_ID'")
+fi
+
+WHERE=""
+if [[ ${#WHERE_CLAUSES[@]} -gt 0 ]]; then
+  # Join array elements with ' AND '
+  first=1
+  for clause in "${WHERE_CLAUSES[@]}"; do
+    if [[ $first -eq 1 ]]; then
+      WHERE="WHERE $clause"
+      first=0
+    else
+      WHERE="$WHERE AND $clause"
+    fi
+  done
+fi
+
+# Build query based on format
+case $FORMAT in
+  csv)
+    sqlite3 -header -csv "$AUDIT_DB" "SELECT project, check_group, check_id, status, data, note, timestamp FROM checks $WHERE ORDER BY timestamp DESC;"
+    ;;
+  json)
+    sqlite3 -json "$AUDIT_DB" "SELECT project, check_group, check_id, status, data, note, timestamp FROM checks $WHERE ORDER BY timestamp DESC;"
+    ;;
+  table|*)
+    # Default table format with nice column display
+    sqlite3 -header -column "$AUDIT_DB" "SELECT project, check_group, check_id, status, substr(data,1,30) as data, substr(note,1,50) as note, timestamp FROM checks $WHERE ORDER BY timestamp DESC;"
+    ;;
+esac
+
+# Exit with appropriate code based on results
+RESULT_COUNT=$(sqlite3 "$AUDIT_DB" "SELECT COUNT(*) FROM checks $WHERE;")
+if [[ $RESULT_COUNT -eq 0 ]]; then
+  echo "No results found." >&2
+  echo "Try :"
+  echo "  PLATFORM_PROJECT=$PLATFORM_PROJECT ./check $CHECK_ID"
+  exit 1
+fi

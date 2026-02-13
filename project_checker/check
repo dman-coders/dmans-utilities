@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+
+# Source the util library relative to this script's location (zsh-compatible)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-${(%):-%x}}")" && pwd)"
+source "$SCRIPT_DIR/../feedback_functions.lib"
+source "$SCRIPT_DIR/../audit_reporting.lib"
+PLATFORM_CLI=${PLATFORM_CLI:-platform}
+# When running CLI, avoid any interactive prompts.
+export PLATFORMSH_CLI_NO_INTERACTION="1"
+
+source "$SCRIPT_DIR/checks/$1" || ( log_error "Invalid check. could not source $1" && exit 1 )
+
+log_notice "Running: check \033[97;40m$(basename $1)\033[0m "
+log_notice "$CHECK_DESCRIPTION"
+
+check_required_parameters_are_set || exit $?
+
+# If the check explicitly published what its check process was, show that.
+log_notice "$literal_check_command"
+
+# This evaluation of the `check` command needs to capture the
+# STDOUT, STERR and return code, and log them each
+# into the audit_reporting_set_check
+set +e
+TMPLOG=$(mktemp)
+OUTPUT=$(check 2>"$TMPLOG")
+STATUS_CODE=$?
+LOG=$(cat "$TMPLOG")
+rm "$TMPLOG"
+set -e
+
+STATUS_TEXT=$(audit_status_code_to_text $STATUS_CODE)
+audit_report_result "$CHECK_ID" "$STATUS_TEXT" "$OUTPUT" "$LOG"
+echo "$OUTPUT"
+echo -e "$LOG" >&2
+exit $STATUS_CODE;

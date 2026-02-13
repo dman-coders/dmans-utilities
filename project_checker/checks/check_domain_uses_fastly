@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+
+# Check metadata for Gherkin matching
+CHECK_ID="check_domain_uses_fastly"
+CHECK_GROUP="cache"
+CHECK_WHEN="the domain uses Fastly CDN"
+CHECK_DESCRIPTION="Detect if domain uses Fastly CDN and retrieve Fastly service ID"
+CHECK_RETURN_VARNAME=FASTLY_SERVICE_ID
+
+# Required parameters
+REQUIRED_PARAMETERS=( DOMAIN PLATFORM_PROJECT )
+
+# Literal command for documentation/logging
+literal_check_command="dig +short \$DOMAIN A"
+
+check() {
+    local ips
+    local is_fastly
+    local service_id
+
+    is_fastly="false"
+
+    log_notice "Checking if $DOMAIN points to Fastly..."
+
+    # Check DNS for Fastly IPs (151.101.x.x range)
+    ips=$(dig +short "$DOMAIN" A 2>/dev/null)
+
+    for ip in $ips; do
+        if [[ "$ip" =~ ^151\.101\. ]]; then
+            is_fastly="true"
+            log_success "Fastly detected: $DOMAIN -> $ip"
+            break
+        fi
+    done
+
+    if [[ "$is_fastly" == "false" ]]; then
+        log_info "No Fastly IPs detected for $DOMAIN"
+        echo ""
+        exit 1
+    fi
+
+    # If Fastly detected, try to get service ID via Fastly API
+    log_notice "Attempting to retrieve Fastly service ID for project $PLATFORM_PROJECT..."
+
+    # Check for Fastly API token
+    if [[ -z "${FASTLY_API_TOKEN:-}" ]]; then
+        log_warning "FASTLY_API_TOKEN not set - cannot retrieve service ID"
+        log_warning "Set FASTLY_API_TOKEN to retrieve service ID automatically"
+        echo ""
+        exit 21  # Warning - Fastly detected but no API access
+    fi
+
+    # Query Fastly API for services matching project ID
+    # Based on logic from bin/fastly_get_service
+    service_id=$(curl -s -H "Fastly-Key: $FASTLY_API_TOKEN" \
+        https://api.fastly.com/service \
+        | jq -r "map(select(.name | contains(\"$PLATFORM_PROJECT\"))) | .[].id" \
+        | head -1)
+
+    if [[ -n "$service_id" ]]; then
+        log_success "Fastly service ID found: $service_id"
+        log_info "View at: https://manage.fastly.com/configure/services/${service_id}"
+        echo "$service_id"
+        exit 0
+    else
+        log_warning "No Fastly service found matching project ID: $PLATFORM_PROJECT"
+        log_warning "Service may be named differently. Check: https://manage.fastly.com/services/all"
+        echo ""
+        exit 21  # Warning - Fastly detected but service ID not found
+    fi
+}

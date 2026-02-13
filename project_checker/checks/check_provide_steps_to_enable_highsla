@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+
+# Check metadata for Gherkin matching
+CHECK_ID="check_provide_steps_to_enable_highsla"
+CHECK_GROUP="HighSLA"
+CHECK_WHEN="provide steps to enable HighSLA"
+CHECK_THEN="provide steps to enable HighSLA"
+CHECK_DESCRIPTION="Display the complete workflow for enabling HighSLA monitoring using checkmate with cachebuster"
+CHECK_RETURN_VARNAME=""
+
+# Required parameters
+REQUIRED_PARAMETERS=( PLATFORM_PROJECT TICKET_ID )
+
+# Literal command for documentation/logging
+literal_check_command=""
+
+check() {
+    local PROJECT_ID="$PLATFORM_PROJECT"
+    local REGION=$(platform --project="$PROJECT_ID" project:info region 2>/dev/null || echo "UNKNOWN_REGION")
+    local DOMAIN=$(platform --project="$PROJECT_ID" project:info default_domain 2>/dev/null || echo "UNKNOWN_DOMAIN")
+    local PROJECT_URL="https://${REGION}/projects/${PROJECT_ID}"
+
+    log_notice "=== HighSLA Enablement Steps for $PROJECT_ID ==="
+
+    echo ""
+    echo "WORKFLOW: Enable HighSLA monitoring for Platform.sh project"
+    echo "Project ID: $PROJECT_ID"
+    echo "Region: $REGION"
+    echo "Domain: $DOMAIN"
+    echo "Project URL: $PROJECT_URL"
+    echo ""
+
+    echo "PRE-REQUISITES:"
+    echo "  ✓ Project must be Enterprise tier"
+    echo "  ✓ Site must be active and serving content"
+    echo "  ✓ Fastly CDN should be configured and working (Optional)"
+    echo "  ✓ Must have access to checkmate repository"
+    echo ""
+
+    echo "STEP 3: Generate YAML configuration, optionally with cachebuster"
+    echo "  # ( This takes care of all the git repo branch setup also. )
+    echo "  # Enhanced checkmate with raw checks:"
+    echo "  checkmate-enhanced $PROJECT_ID $TICKET_ID"
+    echo "  # OR manual generation:"
+    echo "  checkmate $PROJECT_URL"
+    echo "  # Then edit the generated YAML to use 'raw:' with cachebuster"
+    echo ""
+
+    echo "STEP 4: Review and commit configuration"
+    echo "  # Verify the YAML uses raw checks with cachebuster:"
+    echo "  cat ${PROJECT_ID}.yaml"
+    echo "  # Should contain:"
+    echo "  #   raw:"
+    echo "  #     - target: https://${DOMAIN}/?cachebuster={{now}}"
+    echo "  #       type: HTTPADV"
+    echo "  #     - target: https://${DOMAIN}/"
+    echo "  #       type: SSL"
+    echo "  #       warningdays: 6"
+    echo ""
+    echo "  git add ${PROJECT_ID}.yaml"
+    echo "  git commit -m \"\$TICKET_ID: Enable HighSLA for $PROJECT_ID ($DOMAIN)\""
+    echo "  git push origin \$TICKET_ID"
+    echo ""
+
+    echo "STEP 5: Notify teams"
+    echo "  # Slack #log channel:"
+    echo "  \"Enabling HighSLA for $PROJECT_ID $DOMAIN - new ping alerts may be incoming\""
+    echo ""
+    echo "  # Slack #merge-minions channel:"
+    echo "  \"Please review and merge HighSLA configuration for $PROJECT_ID\""
+    echo "  \"MR: [link to merge request]\""
+    echo ""
+
+    echo "STEP 6: Monitor deployment"
+    echo "  # After merge, CI will create NodePing checks"
+    echo "  # Verify checks are created and functioning"
+    echo "  # Monitor for any initial alerts"
+    echo ""
+
+    echo "VERIFICATION COMMANDS:"
+    echo "  # Test the cachebuster URL manually:"
+    echo "  curl -I \"https://${DOMAIN}/?cachebuster=\$(date +%s)\""
+    echo "  # Verify no caching headers are returned"
+    echo ""
+    echo "  # Check project health before enabling:"
+    echo "  cd bin/highsla_review.d/"
+    echo "  python3 gherkin_runner.py audit.feature --name=\"$PROJECT_ID\""
+    echo ""
+
+    echo "TROUBLESHOOTING:"
+    echo "  • If site returns cached responses: Add cache bypass rules"
+    echo "  • If SSL issues: Verify certificate is valid and current"
+    echo "  • If NodePing fails: Check firewall and origin restrictions"
+    echo "  • For Fastly issues: Verify VCL configuration and purging"
+    echo ""
+
+    echo "IMPORTANT REFERENCES:"
+    echo "  • Checkmate README: /var/www/checkmate/README.md"
+    echo "  • HighSLA docs: HOWTO/enable HighSLA with checkmate and cachebuster.md"
+    echo "  • Full audit: bin/highsla_review.d/gherkin_runner.py audit.feature"
+    echo ""
+
+    exit 0
+}

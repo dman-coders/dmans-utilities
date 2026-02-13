@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+
+# Check metadata for Gherkin matching
+CHECK_ID="check_project_app_name"
+CHECK_WHEN="the project has an app count"
+CHECK_DESCRIPTION="Check if the project is single or multi-app"
+CHECK_RETURN_VARNAME=PLATFORM_APP
+CHECK_GROUP="project"
+
+# This logs and checks app count , and
+# sets the name of the default app in multiapp contexts.
+
+# Required parameters
+REQUIRED_PARAMETERS=( PLATFORM_PROJECT PLATFORM_CLI PLATFORM_BRANCH )
+
+# Literal command for documentation/logging
+literal_check_command="$PLATFORM_CLI -y --project=$PLATFORM_PROJECT --environment=$PLATFORM_BRANCH app:list --format=plain --columns=name --no-header"
+
+check() {
+    log_info "Retrieving the $PLATFORM_PROJECT/$PLATFORM_BRANCH environments app list from Upsun API..."
+    PLATFORM_APPS=$(eval "$literal_check_command" 2>/dev/null)
+    PLATFORM_APP_COUNT=$(echo "$PLATFORM_APPS" | grep -c .)
+    PLATFORM_APP=$(echo "$PLATFORM_APPS" | head -1 )
+    echo "$PLATFORM_APP"
+
+    if [[ "$PLATFORM_APP_COUNT" -eq 1 ]]; then
+        log_success "Project ${PLATFORM_PROJECT}/${PLATFORM_BRANCH} has $PLATFORM_APP_COUNT apps . Default PLATFORM_APP is '${PLATFORM_APP}'"
+        exit 0
+    elif [[ "$PLATFORM_APP_COUNT" -gt 1 ]]; then
+        log_success "Project ${PLATFORM_PROJECT}/${PLATFORM_BRANCH} has $PLATFORM_APP_COUNT apps . Default PLATFORM_APP is '${PLATFORM_APP}'"
+        exit 21
+    else
+        log_error "Environment  ${PLATFORM_BRANCH} on project ${PLATFORM_PROJECT} has no applications running at all!?"
+        log_error "    $literal_check_command"
+        log_error "This is unexpected"
+        exit 1
+    fi
+}

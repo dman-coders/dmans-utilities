@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+
+# Check metadata for Gherkin matching
+CHECK_ID="check_url_responds_to_https_request"
+CHECK_GROUP="web"
+CHECK_WHEN="the URL responds to an HTTPS request"
+CHECK_DESCRIPTION="Verify the URL responds with HTTP 200 (after following 301s)"
+CHECK_RETURN_VARNAME=""
+
+# Required parameters
+REQUIRED_PARAMETERS=( URL )
+
+# Literal command for documentation/logging
+literal_check_command="curl --output /dev/null --silent --location --max-time 10 --write-out '%{http_code}' '$URL'"
+check() {
+    log_info "Checking HTTP response from URL..."
+
+    HTTP_RESPONSE=$(eval $literal_check_command 2>/dev/null)
+    echo "$HTTP_RESPONSE"
+
+    if [[ "$HTTP_RESPONSE" == "200" ]]; then
+        log_success "HTTPS request to '$URL' returned HTTP $HTTP_RESPONSE"
+        exit 0
+    else
+        log_error "HTTPS request to '$URL' returned HTTP $HTTP_RESPONSE"
+        exit 1
+    fi
+}

@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+
+# Check metadata for Gherkin matching
+CHECK_ID="check_for_platformsh_headers"
+CHECK_GROUP="web"
+CHECK_WHEN="the response headers should show it is served by Platform.sh"
+CHECK_DESCRIPTION="Verify the domain is served by Platform.sh by checking response headers"
+CHECK_RETURN_VARNAME=""
+
+# Required parameters
+REQUIRED_PARAMETERS=( URL )
+
+# Literal command for documentation/logging
+literal_check_command="curl --head --silent --location --connect-timeout 20 --max-time 20 $URL | grep -i -E '(x-platform)'"
+
+check() {
+    log_info "Checking for a Upsun/Platform headers in the http response.."
+
+    # Get headers and check for Platform.sh indicators (with timeout)
+    # I found one case where HEAD was "Method not allowed" so I'll use GET.
+    HEADERS=$(curl --head --silent --location -X GET --connect-timeout 20 --max-time 20 "$URL" 2>/dev/null)
+    exit_code=$?
+    if [[ $exit_code -ne 0 ]]; then
+        log_error "Failed to fetch headers from '$URL' (exit code $exit_code . timeout or connection error)"
+        log_error curl --head --silent --location --connect-timeout 20 --max-time 20 $URL
+        exit 2
+    fi
+    
+    PLATFORM_HEADERS=$(echo "$HEADERS" | grep -i -E '(x-platform)')
+    
+    # echo "$PLATFORM_HEADERS"
+    
+    if [[ -n "$PLATFORM_HEADERS" ]]; then
+        log_success "URL $URL is served by Platform.sh"
+        log_info "Platform.sh headers found: $PLATFORM_HEADERS"
+        exit 0
+    else
+        log_error "URL $URL does not appear to be served by Platform.sh"
+        log_error "No Platform.sh identifying headers found in response"
+        log_error "Headers received:"
+        log_error "$HEADERS"
+        log_error "To fix: Ensure the domain is properly configured and pointing to Platform.sh"
+        exit 1
+    fi
+}

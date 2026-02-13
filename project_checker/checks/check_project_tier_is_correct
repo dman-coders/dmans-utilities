@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+
+# Check metadata for Gherkin matching
+CHECK_ID="check_project_tier_is_correct"
+CHECK_GROUP="project"
+CHECK_WHEN="the project subscription should be {PROJECT_TIER} tier"
+CHECK_DESCRIPTION="Verify project has the given subscription tier"
+
+# Required parameters
+REQUIRED_PARAMETERS=( PLATFORM_PROJECT PLATFORM_CLI PROJECT_TIER )
+
+# Literal command for documentation/logging
+literal_check_command="$PLATFORM_CLI -y subscription:info --project=$PLATFORM_PROJECT support_tier"
+
+check() {
+    log_info "Retrieving project tier from accounts..."
+    support_tier=$(eval $literal_check_command 2>/dev/null)
+    echo "$support_tier"
+    
+    if [[ "${support_tier,,}" == "${PROJECT_TIER,,}" ]]; then
+        log_success "Project ${PLATFORM_PROJECT} is $support_tier tier"
+        exit 0
+    else
+        log_error "Project ${PLATFORM_PROJECT} is not $PROJECT_TIER tier, it's '$support_tier'"
+        log_error "    $literal_check_command"
+        log_error "To fix: Contact support to upgrade to $PROJECT_TIER tier"
+        exit 1
+    fi
+}

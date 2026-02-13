@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+
+# For each project ID passed on the CLI, run the named check for that project.
+# Usage: bin/project_checker/checks/check_bulk <check_the_checkname> <project_id> [<project_id> ...]
+
+# Don't exit on errors, some may fail, some may succeed
+# set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-${(%):-%x}}")" && pwd)"
+source "$SCRIPT_DIR/../../feedback_functions.lib"
+
+CHECK=$1;
+shift;
+
+
+for PROJECT_ID in "$@"; do
+  PROJECT_TITLE=$(platform project:info --project=$PROJECT_ID title)
+  log_notice "Checking project '$PROJECT_TITLE' ID: $PROJECT_ID"
+  export PLATFORM_PROJECT=$PROJECT_ID
+  "$SCRIPT_DIR/../check" $CHECK
+
+  log_info "----------------------------------------"
+done
+
