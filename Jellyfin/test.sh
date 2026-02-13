@@ -5,7 +5,7 @@ source "$SCRIPT_DIR/jellyfin-utils.lib"
 # List the collections
 jf ListCollections
 
-# Select a random one
+# Select a random collections
 COLLECTION_JSON=$( jf ListCollections | jq -r 'to_entries | .[now % length].value' )
 COLLECTION_NAME=$(echo $COLLECTION_JSON | jq -r '.Name')
 COLLECTION_ID=$(echo $COLLECTION_JSON | jq -r '.Id')
@@ -14,7 +14,7 @@ log_success "Selected collection: $COLLECTION_NAME $COLLECTION_ID"
 # List the items in that collections
 #COLLECTION_ITEMS=$( ./CollectionItems "$COLLECTION_ID" )
 
-# Select a random one.
+# Select a random item from the collection.
 # Select a media resource, not a container.
 ITEM_JSON=$( jf CollectionItems "$COLLECTION_ID"  | jq -r 'to_entries | .[now % length].value' )
 if [[ -z "$ITEM_JSON" ]]; then
@@ -25,7 +25,7 @@ ITEM_NAME=$(echo $ITEM_JSON | jq -r '.Name')
 ITEM_ID=$(echo $ITEM_JSON | jq -r '.Id')
 log_success "Selected Item: $ITEM_NAME $ITEM_ID"
 
-# retrieve details about that item
+# Retrieve details about that item
 # The JSON retrieved from the first lookup was 1/3 of the full data.
 # Doesn't even include Path or metadata, mostly just JF organizational info..
 ITEM_JSON=$( jf GetItem "$ITEM_ID" )

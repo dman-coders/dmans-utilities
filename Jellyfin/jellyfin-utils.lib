@@ -4,6 +4,18 @@
 # Requires environment variables: JELLYFIN_HOST, JELLYFIN_PORT, JELLYFIN_API_KEY, JELLYFIN_USERID
 # Optional: JELLYFIN_ROOT_DATA_FOLDER, JELLYFIN_LOCAL_DATA_FOLDER
 
+# JELLYFIN_HOST, JELLYFIN_PORT should be available when you set up connection to the server.
+# The JELLYFIN_API_KEY is retrieved from
+#    http://jellyfin.local:8096/web/#/dashboard/keys
+# The JELLYFIN_USERID can be seen in the URL when you click "Profile" in
+#    http://jellyfin.local:8096/web/#/mypreferencesmenu.html
+
+
+# JELLYFIN_ROOT_DATA_FOLDER is where the JellyFin server thinks all its files are.
+# JELLYFIN_LOCAL_DATA_FOLDER is that path the local process can use to access the JELLYFIN_ROOT_DATA_FOLDER
+#  If running on the same server, then these will be the same,
+#  but if virtualized or using a mapped drive, then this sets up the mapping.
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../feedback.lib"
 alias jf="$(realpath "${SCRIPT_DIR}/JellyFin")"

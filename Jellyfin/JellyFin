@@ -747,7 +747,8 @@ if [ $# -eq 0 ]; then
     log_notice "  Items: Items, GetItem, GetItemByPath, Hierarchy"
     log_notice "  Collections: ListCollections, CreateCollection, CollectionItems, FindItemCollections"
     log_notice "  Modify: UpdateItem, AddItemToCollection, RemoveItemFromCollection, UpdateTags"
-    exit 1
+    #exit 1
+else
+  RunCommand "$@"
 fi
 
-RunCommand "$@"
