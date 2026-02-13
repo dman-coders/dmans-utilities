@@ -16,19 +16,19 @@ project_path=$2
 git_uri=$3
 project_branch="7.x-1.x"
 
-echo "assuming i am in docroot and on a clean git of the branch you want to make this change in"
+echo "Assuming I am in docroot and on a clean git of the branch you want to make this change in."
 docroot=$(pwd)
 main_branch=$(git rev-parse --abbrev-ref HEAD)
 git status
 git pull
 git tag "BEFORE_SUBTREE_SPLIT_${project_name}"
 
-echo "the subtree split may take a while (~1 min) due to large project history"
+echo "The subtree split may take a while (~1 min) due to large project history."
 
 # Extract the subproject into a stand-alone branch containing only it.
 git subtree split --prefix="$project_path" -b "$project_name"
 
-echo "preparing a place to copy the new tree into. building the new folder and repo"
+echo "Preparing a place to copy the new tree into. Building the new folder and repo."
 cd ..
 mkdir "$project_name"
 cd "$project_name"
@@ -42,7 +42,7 @@ git checkout -b "$project_branch"
 git pull "$docroot" "$project_name:$project_branch"
 git push origin "$project_branch"
 
-echo "now replacing the subfolder in the master project with an included subtree"
+echo "Now replacing the subfolder in the master project with an included subtree."
 cd "$docroot"
 git remote add "$project_name" "$git_uri"
 git rm -r "$project_path"
@@ -57,9 +57,9 @@ git tag "AFTER_SUBTREE_SPLIT_${project_name}"
 # So stop that.
 git config branch.master.rebase false
 
-echo "this process has already made the git commits to your project. check this now before pushing"
-echo "you can revert to BEFORE_SUBTREE_SPLIT_${project_name} to back out now if there is a problem"
-echo "running:"
+echo "This process has already made the git commits to your project. Check this now before pushing."
+echo "You can revert to BEFORE_SUBTREE_SPLIT_${project_name} to back out now if there is a problem."
+echo "Running:"
 echo "    git diff BEFORE_SUBTREE_SPLIT_${project_name} AFTER_SUBTREE_SPLIT_${project_name}"
-echo "should show no changes at all"
-echo "you can ignore these local tags, probably no need to push them"
+echo "should show no changes at all."
+echo "You can ignore these local tags, probably no need to push them."

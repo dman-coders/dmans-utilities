@@ -44,4 +44,4 @@ git config --add branch.6.x-1.x.merge refs/heads/6.x-1.x
 # Commit to make the history work
 git commit -m "removed all data but the folder that was extracted"
 
-echo "done. remember to add a new remote origin, and commit and push the changes (especially including push --tags) to the destination branch"
+echo "Done. Remember to add a new remote origin, and commit and push the changes (especially including push --tags) to the destination branch."

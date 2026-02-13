@@ -84,4 +84,4 @@ echo "cleaning up temp repo..."
 chmod 0777 "$old_branch_path"
 rm -r -f "$old_branch_path"
 
-echo "done. remember to commit and push the changes to the destination branch"
+echo "Done. Remember to commit and push the changes to the destination branch."
