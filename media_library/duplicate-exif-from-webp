@@ -44,7 +44,7 @@ function processFile {
         local uuid=$(exiftool -uuid -s -s -s "${source_file}")
         if [[ -n "$uuid" ]]; then
             echo "Looking for UUID $uuid to scrape metadata from." >&2
-            archive_file=$(fetch-version-from-uuid-archive "${source_file}")
+            archive_file=$(media-fetch-version-from-uuid-archive "${source_file}")
             if [[ -f $archive_file ]] ; then
               target_file="$archive_file"
             fi
