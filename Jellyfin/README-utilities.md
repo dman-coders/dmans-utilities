@@ -1,24 +1,41 @@
 # Jellyfin Utility Scripts
 
-## Available Scripts
+## Available Functions
+
+There are two ways to nteract with Jellyfin via these utilities:
+1. **Via the Jellyfin script** - `Jellyfin ListCollections` will execute that command 
+2. **By importing the functions into context and invoking them directly** `source JellyFin; Listcollections` will invoke the `Listcollections()` function directly.
+
+Both approaches also require the appropriate environmnet variables to be set and depend on them heavily.
+`source .env` is the recommended way to set them up for local testing.
+
+The following examples assume you have a `.env` file
+and have included the `Jellyfin` library.
+
+```bash
+source .env
+source JellyFin
+```
 
 ### ListCollections
 Lists all collections (BoxSets) in your Jellyfin library.
 
 **Usage:**
 ```bash
-source .env && ./ListCollections
+JellyFin ListCollections
+# or 
+source JellyFin; ListCollections
 ```
 
 **Output:**
 ```json
 [
   {
-    "Name": "Deepthroat",
+    "Name": "Cute",
     "Id": "5f408f9d50b7ddd6da73b69228fbf3c6",
     "ParentId": "8679d10569ec12981200c4116da3e90b",
     "ItemCount": null,
-    "Path": "/var/lib/jellyfin/data/collections/Deepthroat [boxset]"
+    "Path": "/var/lib/jellyfin/data/collections/Cute [boxset]"
   },
   ...
 ]
@@ -29,16 +46,16 @@ Creates a new collection (BoxSet) in Jellyfin.
 
 **Usage:**
 ```bash
-source .env && ./CreateCollection "Collection Name" [ItemIds]
+CreateCollection "Collection Name" [ItemIds]
 ```
 
 **Examples:**
 ```bash
 # Create empty collection
-./CreateCollection "My New Collection"
+CreateCollection "My New Collection"
 
 # Create collection and add items
-./CreateCollection "Best Videos" "item-id-1,item-id-2,item-id-3"
+CreateCollection "Best Videos" "item-id-1,item-id-2,item-id-3"
 ```
 
 **Output:**
@@ -53,7 +70,7 @@ Lists all media libraries (CollectionFolders).
 
 **Usage:**
 ```bash
-source .env && ./MediaFolders
+MediaFolders
 ```
 
 ### Genres
@@ -61,7 +78,7 @@ Lists all genres found in your library.
 
 **Usage:**
 ```bash
-source .env && ./Genres
+Genres
 ```
 
 ## Important Findings
