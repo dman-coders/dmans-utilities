@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Use this to debug git transactions
+# by setting
+#   export GIT_SSH="ssh-verbose.sh"
+exec /usr/bin/ssh -vvv "$@"

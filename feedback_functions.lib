@@ -1,0 +1,373 @@
+#!/usr/bin/env bash
+
+# Trivial slightly-formatted print wrappers.
+# For these to be useful, this lib should be included by source-ing it.
+# source "$(dirname "$(readlink -f "$0")")/feedback_functions.lib"
+
+PLATFORM_CLI=${PLATFORM_CLI:-upsun}
+
+# Define ANSI color codes as constants
+COLOR_RESET="\033[0m"
+COLOR_GRAY="\033[90m"
+COLOR_RED="\033[1;31m"
+COLOR_GREEN="\033[1;32m"
+COLOR_YELLOW="\033[1;33m"
+COLOR_BLUE="\033[34m"
+COLOR_BRIGHT_RED="\033[91m"
+COLOR_BRIGHT_GREEN="\033[92m"
+COLOR_BRIGHT_BLUE="\033[94m"
+COLOR_BRIGHT_WHITE="\033[97m"
+
+LOGLEVEL_CRITICAL=1
+LOGLEVEL_SUCCESS=2
+LOGLEVEL_ERROR=3
+LOGLEVEL_WARNING=4
+LOGLEVEL_NOTICE=5
+LOGLEVEL_INFO=6
+LOGLEVEL_DEBUG=7
+LOGLEVEL_TRACE=8
+
+export exit_code=0
+export exit_error=1
+export exit_warning=2
+
+export LOGLEVEL=${LOGLEVEL:-${LOGLEVEL_NOTICE}}
+export ADD_SOURCE_TO_MESSAGES=${ADD_SOURCE_TO_MESSAGES:-""}
+export ADD_LABEL_TO_MESSAGES=${ADD_LABEL_TO_MESSAGES:-""}
+
+# Generalized log function
+# Can accept input as either an arg or piped.
+log_message() {
+  local level=$1
+  shift 1
+  case "${level}" in
+    "${LOGLEVEL_TRACE}")
+      color=${COLOR_GRAY}
+      label="TRACE"
+      ;;
+    "${LOGLEVEL_DEBUG}")
+      color=${COLOR_GRAY}
+      label="DEBUG"
+      ;;
+    "${LOGLEVEL_NOTICE}")
+      color=${COLOR_BRIGHT_BLUE}
+      label="NOTICE"
+      ;;
+    "${LOGLEVEL_INFO}")
+      color=${COLOR_BLUE}
+      label="INFO"
+      ;;
+    "${LOGLEVEL_WARNING}")
+      color=${COLOR_YELLOW}
+      label="WARNING"
+      ;;
+    "${LOGLEVEL_ERROR}")
+      color=${COLOR_RED}
+      label="ERROR"
+      ;;
+    "${LOGLEVEL_SUCCESS}")
+      color=${COLOR_BRIGHT_GREEN}
+      label="SUCCESS"
+      ;;
+    "${LOGLEVEL_CRITICAL}")
+      color=${COLOR_BRIGHT_RED}
+      label="CRITICAL"
+      ;;
+    *)
+      color=${COLOR_RESET}
+      log_warning "No level set for ${FUNCNAME[0]} ?"
+      level=0
+      ;; # Default case, no color
+  esac
+
+  prefix=""
+  if [[ -n "${ADD_LABEL_TO_MESSAGES}" ]]; then
+    prefix="${label}: "
+  fi
+  if [[ -n "${ADD_SOURCE_TO_MESSAGES}" ]]; then
+    prefix="${prefix}${COLOR_GRAY}# ($(basename "$0")) #${COLOR_RESET} "
+  fi
+
+  if [[ ! -t 0 ]]; then
+    # Handle piped input - always consume stdin to prevent SIGPIPE
+    while IFS= read -r line; do
+      # shellcheck disable=SC2250
+      if [[ "${LOGLEVEL}" -ge "${level}" ]]; then
+        echo -e "$prefix ${color}$line${COLOR_RESET}" >&2
+      fi
+    done
+  else
+    # Handle inline arguments - only output if log level permits
+    if [[ "${LOGLEVEL}" -ge "${level}" ]]; then
+      echo -e "${prefix} ${color}$*${COLOR_RESET}" >&2
+    fi
+  fi
+}
+
+log_trace() { log_message "${LOGLEVEL_TRACE}" "$*"; }
+log_debug() { log_message "${LOGLEVEL_DEBUG}" "$*"; }
+log_info() { log_message "${LOGLEVEL_INFO}" "$*"; }
+log_notice() { log_message "${LOGLEVEL_NOTICE}" "$*"; }
+log_warning() { log_message "${LOGLEVEL_WARNING}" "$*"; }
+log_success() { log_message "${LOGLEVEL_SUCCESS}" "$*"; }
+log_error() { log_message "${LOGLEVEL_ERROR}" "$*"; }
+log_critical() { log_message "${LOGLEVEL_CRITICAL}" "$*"; }
+
+print_log() {
+  # Old alias, deprecate.
+  log_notice "$@"
+}
+add_source() {
+  prefix="${COLOR_GRAY}# ($(basename "$0")) #${COLOR_RESET} "
+  echo "${prefix} $*"
+}
+
+log_indent() {
+  indent "$@"
+}
+
+log_function_call() {
+  echo -e ">  \033[0;97;46m${FUNCNAME[1]} \033[0;94;46m$*\033[0m" >&2
+}
+
+indent() {
+  local prefix="    "
+  if [[ "$#" -eq 0 ]]; then
+    sed "s/^/${prefix}/"
+  else
+    printf "%s\n" "$@" | sed "s/^/${prefix}/"
+  fi
+}
+
+format_keyval() {
+  local key=$1
+  local value=$2
+  echo -e "${COLOR_LIGHT_BLUE}${key}:${COLOR_RESET}\n$(indent "${value}")"
+}
+
+# A wrapper to run commands, formatting both STDOUT and STDERR,
+# Return value and return code should still be passed back to the caller context.
+# Should only be run when the commands are inline, NOT a quopted string
+#  run_command ls -la /some/dir # RIGHT
+#  the_command="ls -la /some/dir"
+#  run_command $the_command   # WRONG
+# Use run_command_quoted for that.
+run_command() {
+  log_notice "Running command: \033[97;40m$*\033[0m"
+  local exit_code
+  # Set a narrower width for the child process
+  # So it doesn't look like ass after I add a prefix.
+  local original_columns=${COLUMNS}
+  export COLUMNS=80
+
+  # Execute command, force pipe behavior for consistent output, pipe stderr through log_trace
+  "$@" 2> >(log_trace >&2) | cat
+  exit_code=$?
+
+  # Restore original width if it was set
+  if [[ -n "${original_columns}" ]]; then
+    export COLUMNS=${original_columns}
+  else
+    unset COLUMNS
+  fi
+
+  return "${exit_code}"
+}
+# Use this when we don't want to use the actual output,
+# but do want to log it.
+run_command_quietly() {
+  run_command "$@" | log_info
+  exit_code=$?
+  return "${exit_code}"
+}
+
+# Use this version if running a command using pipes or subshells.
+#   run_command_quoted "cat \"INPUTFILE\" > \"OUTPUTFILE\""
+# Will filter the STDERR via a formatter, but echo STDOUTto the caller.
+run_command_quoted() {
+  local command_string="$1"
+  log_info "Running command: \033[97;40m${command_string}\033[0m"
+  local exit_code
+  eval "${command_string}" 2> >(log_trace >&2) | cat
+  exit_code=$?
+  return "${exit_code}"
+}
+
+# Use this to avoid any of the command output coming into STOUT.
+# Use for tasks where the return value isn't used.
+run_command_quoted_quietly() {
+  run_command_quoted "$1" | log_info
+  exit_code=$?
+  return "${exit_code}"
+}
+
+# Verifies that some pre-requisite variables have already been set in the current scope.
+# The expected variables are either pre-declared in a REQUIRED_PARAMETERS array,
+# or passed as arguments to the function.
+# When an expected variable is found, it is logged.
+# if an required variable is unset or empty, raise an error.
+#
+# Usage:
+#
+# SOURCE_PROJECTID=gfdsar
+# SOURCE_BRANCH=''
+# REQUIRED_PARAMETERS=( SOURCE_PROJECTID SOURCE_BRANCH )
+# check_required_parameters_are_set
+# > SOURCE_PROJECTID=gfdsar
+# > SOURCE_BRANCH is required, but is currently blank
+#
+check_required_parameters_are_set() {
+  local parameters=("${REQUIRED_PARAMETERS[@]}")
+  if [[ $# -gt 0 ]]; then
+    parameters=("$@")
+  fi
+  local value
+  for varname in "${parameters[@]}"; do
+    log_debug $varname
+    eval value=\$"${varname}"
+    if [[ -z ${value} ]]; then
+      log_error "${varname} is required, but is currently blank" >&2
+      # Error 21 : One or more arguments are missing.
+      return 21
+    else
+      log_info "${COLOR_BRIGHT_WHITE} export ${varname}=${value} ${COLOR_RESET} "
+    fi
+  done
+  log_info 'REQUIRED_PARAMETERS seem valid'
+  return 0
+}
+
+get_project_id_from_context() {
+  export PLATFORM_PROJECT="${1:-${PLATFORM_PROJECT:-$(${PLATFORM_CLI} --no project:info id)}}"
+}
+
+# Make these util funcs available to the sub processes.
+export -f log_message run_command >/dev/null 2>&1
+export -f log_debug log_info log_notice log_warning log_error log_indent >/dev/null 2>&1
+
+test_feedback_functions() {
+  # Define semantic labels for colors
+  local COLOR_LABEL="${COLOR_YELLOW}"
+  local COLOR_FUNCTION="${COLOR_GREEN}"
+  local COLOR_ARGS="${COLOR_GRAY}"
+
+  echo -e "${COLOR_LIGHT_BLUE}Testing feedback functions...${COLOR_RESET}"
+
+  # log_message
+  echo -e "${COLOR_LABEL}Function:${COLOR_RESET} ${COLOR_FUNCTION}log_message${COLOR_RESET} ${COLOR_ARGS}\"Log message\"${COLOR_RESET}"
+  log_message 0 "Log message"
+  echo
+
+
+  # log_error
+  echo -e "${COLOR_LABEL}Function:${COLOR_RESET} ${COLOR_FUNCTION}log_error${COLOR_RESET} ${COLOR_ARGS}\"Error message\"${COLOR_RESET}"
+  log_error "Error message"
+  echo -e "${COLOR_LABEL}Function piped:${COLOR_RESET} ${COLOR_ARGS}echo \"Piped error message\" | ${COLOR_FUNCTION}log_error${COLOR_RESET}"
+  echo "Piped error message" | log_error
+  echo
+
+  # log_success
+  echo -e "${COLOR_LABEL}Function:${COLOR_RESET} ${COLOR_FUNCTION}log_success${COLOR_RESET} ${COLOR_ARGS}\"Success message\"${COLOR_RESET}"
+  log_error "Success message"
+  echo -e "${COLOR_LABEL}Function piped:${COLOR_RESET} ${COLOR_ARGS}echo \"Piped success message\" | ${COLOR_FUNCTION}log_error${COLOR_RESET}"
+  echo "Piped success message" | log_error
+  echo
+
+  # log_warning
+  echo -e "${COLOR_LABEL}Function:${COLOR_RESET} ${COLOR_FUNCTION}log_warning${COLOR_RESET} ${COLOR_ARGS}\"Warning message\"${COLOR_RESET}"
+  log_warning "Warning message"
+  echo -e "${COLOR_LABEL}Function piped:${COLOR_RESET} ${COLOR_ARGS}echo \"Piped warning message\" | ${COLOR_FUNCTION}log_warning${COLOR_RESET}"
+  echo "Piped warning message" | log_warning
+  echo
+
+  # log_notice
+  echo -e "${COLOR_LABEL}Function:${COLOR_RESET} ${COLOR_FUNCTION}log_notice${COLOR_RESET} ${COLOR_ARGS}\"Notice message\"${COLOR_RESET}"
+  log_notice "Notice message"
+  echo -e "${COLOR_LABEL}Function piped:${COLOR_RESET} ${COLOR_ARGS}echo \"Piped notice message\" | ${COLOR_FUNCTION}log_notice${COLOR_RESET}"
+  echo "Piped notice message" | log_notice
+  echo
+
+  # log_info
+  echo -e "${COLOR_LABEL}Function:${COLOR_RESET} ${COLOR_FUNCTION}log_info${COLOR_RESET} ${COLOR_ARGS}\"Info message\"${COLOR_RESET}"
+  log_info "Info message"
+  echo -e "${COLOR_LABEL}Function piped:${COLOR_RESET} ${COLOR_ARGS}echo \"Piped info message\" | ${COLOR_FUNCTION}log_info${COLOR_RESET}"
+  echo "Piped info message" | log_info
+  echo
+
+  # log_debug
+  echo -e "${COLOR_LABEL}Function:${COLOR_RESET} ${COLOR_FUNCTION}log_debug${COLOR_RESET} ${COLOR_ARGS}\"Debug message\"${COLOR_RESET}"
+  log_debug "Debug message"
+  echo -e "${COLOR_LABEL}Function piped:${COLOR_RESET} ${COLOR_ARGS}echo \"Piped debug message\" | ${COLOR_FUNCTION}log_debug${COLOR_RESET}"
+  echo "Piped debug message" | log_debug
+  echo
+
+  # log_trace
+  echo -e "${COLOR_LABEL}Function:${COLOR_RESET} ${COLOR_FUNCTION}log_trace${COLOR_RESET} ${COLOR_ARGS}\"Trace message\"${COLOR_RESET}"
+  log_trace "Trace message"
+  echo -e "${COLOR_LABEL}Function piped:${COLOR_RESET} ${COLOR_ARGS}echo \"Piped trace message\" | ${COLOR_FUNCTION}log_trace${COLOR_RESET}"
+  echo "Piped false
+  multiline
+  trace message" | log_trace
+  echo
+
+  # test all log functions at all loglevels.
+  log_functions=(log_critical log_error log_success log_warning log_notice log_info log_debug log_trace)
+  log_levels=( LOGLEVEL_CRITICAL LOGLEVEL_SUCCESS  LOGLEVEL_ERROR LOGLEVEL_WARNING LOGLEVEL_NOTICE LOGLEVEL_INFO LOGLEVEL_DEBUG LOGLEVEL_TRACE)
+  for log_level in "${log_levels[@]}"; do
+    echo "$log_level = $(eval 'echo $'"$log_level")"
+    echo "LOGLEVEL=\$$log_level"
+    eval "LOGLEVEL=\$$log_level"
+    for log_function in "${log_functions[@]}"; do
+      eval "$log_function '$log_function message inline'"
+      # eval "echo -e \"$log_function piped...\\n  ...into a stream\" | $log_function"
+    done
+  done
+
+  # add_source
+  echo -e "${COLOR_LABEL}Function:${COLOR_RESET} ${COLOR_FUNCTION}add_source${COLOR_RESET} ${COLOR_ARGS}\"Source message\"${COLOR_RESET}"
+  add_source "Source message"
+  echo
+
+  # log_indent
+  echo -e "${COLOR_LABEL}Function:${COLOR_RESET} ${COLOR_FUNCTION}log_indent${COLOR_RESET} ${COLOR_ARGS}\"Indented message\"${COLOR_RESET}"
+  log_indent "Indented message"
+  echo -e "${COLOR_LABEL}Function piped:${COLOR_RESET} ${COLOR_ARGS}echo \"Piped indented message\" | ${COLOR_FUNCTION}log_indent${COLOR_RESET}"
+  echo "Piped indented message" | log_indent
+  echo
+
+  # log_function_call
+  echo -e "${COLOR_LABEL}Function:${COLOR_RESET} ${COLOR_FUNCTION}log_function_call${COLOR_RESET} ${COLOR_ARGS}\"Function arguments\"${COLOR_RESET}"
+  log_function_call "Function arguments"
+  echo
+
+  # indent
+  echo -e "${COLOR_LABEL}Function:${COLOR_RESET} ${COLOR_FUNCTION}indent${COLOR_RESET} ${COLOR_ARGS}\"Indented text\"${COLOR_RESET}"
+  indent "Indented text"
+  echo -e "${COLOR_LABEL}Function piped:${COLOR_RESET} ${COLOR_ARGS}echo \"Piped indented text\" | indent${COLOR_RESET}"
+  echo "Piped indented text" | indent
+  echo
+
+  # format_keyval
+  echo -e "${COLOR_LABEL}Function:${COLOR_RESET} ${COLOR_FUNCTION}format_keyval${COLOR_RESET} ${COLOR_ARGS}\"Key\" \"Value\"${COLOR_RESET}"
+  format_keyval "Key" "Value"
+  echo
+
+  # run_command
+  echo -e "${COLOR_LABEL}Function:${COLOR_RESET} ${COLOR_FUNCTION}run_command${COLOR_RESET} ${COLOR_ARGS}ls${COLOR_RESET}"
+  run_command ls
+  echo
+
+  # run_command_quoted
+  echo -e "${COLOR_LABEL}Function:${COLOR_RESET} ${COLOR_FUNCTION}run_command_quoted${COLOR_RESET} ${COLOR_ARGS}\"echo 'Quoted command'\"${COLOR_RESET}"
+  run_command_quoted "echo 'Quoted command'"
+  echo
+
+  # check_required_parameters_are_set
+  export REQUIRED_PARAMETERS=(TEST_VAR TEST_KEY)
+  echo -e "${COLOR_LABEL}Function:${COLOR_RESET} ${COLOR_FUNCTION}check_required_parameters_are_set${COLOR_RESET} ${COLOR_ARGS}TEST_VAR TEST_KEY${COLOR_RESET}"
+  export TEST_VAR="Test value"
+  check_required_parameters_are_set "TEST_VAR" "TEST_KEY"
+  echo
+}
+# Call the test function
+# test_feedback_functions

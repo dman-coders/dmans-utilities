@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+
+# Enhanced logging functions
+# `source` this file,
+# then run a command by going
+# gen > >(display_stdout) 2> >(display_stderr)
+
+display_stdout() {
+  # prints this green
+  while read -r line; do
+    echo $'\e[32m'"$line"$'\e[0m'
+  done
+}
+
+display_stderr() {
+  # prints this red
+  while read -r line; do
+    echo $'\e[31m'"$line"$'\e[0m'
+    echo "$line" >&2
+  done
+}

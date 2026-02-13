@@ -1,0 +1,138 @@
+#!/usr/bin/env bash
+# audit_reporting.lib
+
+# SQLite-based audit reporting library for atomic check results.
+#
+# Example usage:
+#   source bin/audit_reporting.lib
+#   audit_reporting_init_schema
+#   audit_reporting_set_check "myproject" "origin" "fastly_snippet" "PASS" "All good"
+#   audit_reporting_get_check "myproject" "origin" "fastly_snippet"
+#
+# Environment:
+#   AUDIT_DB   Path to SQLite database (default: audit_results.db)
+#
+# Functions:
+#   audit_reporting_init_schema      # Create schema if not exists
+#   audit_reporting_set_check        # Upsert a check result
+#   audit_reporting_get_check        # Retrieve a check result
+#
+# Schema:
+#   project, check_group, check, status, note, timestamp
+
+AUDIT_DB="${AUDIT_DB:-audit_results.db}"
+
+STATUS_OK="OK"
+STATUS_WARNING="WARNING"
+STATUS_ERROR="ERROR"
+STATUS_UNKNOWN="UNKNOWN"
+
+audit_reporting_init_schema() {
+  sqlite3 "$AUDIT_DB" <<'EOF'
+CREATE TABLE IF NOT EXISTS checks (
+  "project"     TEXT NOT NULL,
+  "check_group"  TEXT NOT NULL,
+  "check_id"    TEXT NOT NULL,
+  "status"      TEXT NOT NULL CHECK("status" IN ('OK', 'WARNING', 'ERROR', 'UNKNOWN')),
+  "data"        TEXT,
+  "note"        TEXT,
+  "timestamp"   TEXT NOT NULL,
+  PRIMARY KEY ("project", "check_group", "check_id")
+);
+EOF
+}
+
+audit_reporting_verify_schema_exists() {
+  if ! sqlite3 "$AUDIT_DB" "SELECT name FROM sqlite_master WHERE type='table' AND name='checks';" | grep -q 'checks'; then
+    log_debug "Audit database schema not found, initializing..."
+    audit_reporting_init_schema
+  fi
+}
+
+audit_reporting_set_check() {
+  # Some variable/field names are cumbersome to avoid conflict
+  # with reserved words in SQLite and shell
+  local project="$1"
+  local check_group="$2"
+  local check_id="$3"
+  local check_status="$4"
+  local data="$5"
+  local note="$6"
+  local timestamp
+  timestamp="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+  audit_reporting_verify_schema_exists
+  sqlite3 "$AUDIT_DB" <<EOF
+INSERT INTO checks ("project", "check_group", "check_id", "status", "data", "note", "timestamp")
+VALUES (
+  '$(sqlite3_escape "$project")',
+  '$(sqlite3_escape "$check_group")',
+  '$(sqlite3_escape "$check_id")',
+  '$(sqlite3_escape "$check_status")',
+  '$(sqlite3_escape "$data")',
+  '$(sqlite3_escape "$note")',
+  '$timestamp'
+)
+ON CONFLICT("project", "check_group", "check_id") DO UPDATE SET
+  "status"=excluded."status",
+  "note"=excluded."note",
+  "data"=excluded."data",
+  "timestamp"=excluded."timestamp";
+EOF
+}
+
+audit_reporting_get_check() {
+  local project="$1"
+  local check_id="$2"
+  sqlite3 "$AUDIT_DB" -header -csv <<EOF
+SELECT * FROM checks
+WHERE "project" = '$(sqlite3_escape "$project")'
+  AND "check_id" = '$(sqlite3_escape "$check_id")';
+EOF
+}
+
+# like audit_reporting_set_check but pulls the project_id and check_group from the first two arguments
+# Adds feedback display/logging.
+# params: check_id="$1" status="$2" data="$3" note="$4"
+audit_report_result() {
+  local project="$PLATFORM_PROJECT"
+  local check_group="$CHECK_GROUP"
+  local check_id="$1"
+  local check_status="$2"
+  local data="$3"
+  local note="$4"
+  audit_reporting_set_check "$project" "$check_group" "$check_id" "$check_status" "$data" "$note"
+  # Add feedback here, saves duplicating it in the checks.
+  if [[ "$check_status" == "$STATUS_OK" ]]; then
+    log_info "Recording Check result: $check_id; $check_status; ($data) "
+  elif [[ "$check_status" == "$STATUS_WARNING" ]]; then
+    log_warning "Recording Check result: $check_id; $check_status; ($data) "
+  elif [[ "$check_status" == "$STATUS_ERROR" ]]; then
+    log_error "Recording Check: result $check_id; $check_status; ($data) "
+  else
+    log_debug "Recording Check result: $check_id; $check_status; ($data) "
+  fi
+}
+
+audit_summarize_project() {
+  local project="${1:-$PLATFORM_PROJECT}"
+  log_debug "${FUNCNAME[0]}) $project"
+  sqlite3 -header -column "$AUDIT_DB" <<EOF
+SELECT check_group, check_id, status, data, note, timestamp
+FROM checks
+WHERE project = '$(sqlite3_escape "$project")'
+ORDER BY check_group, timestamp DESC;
+EOF
+}
+
+sqlite3_escape() {
+  echo "${1//\'/\'\'}"
+}
+
+audit_status_code_to_text() {
+  case "$1" in
+    0) echo "OK" ;;
+    1) echo "ERROR" ;;
+    -1) echo "N/A" ;;
+    *) echo "WARNING" ;;
+  esac
+}
