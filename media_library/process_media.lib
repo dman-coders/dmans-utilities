@@ -426,7 +426,7 @@ display_child_tags(){
 # functions needed (e.g., export -f processWebpFile if processFile depends on it).
 # Note: Feedback from sub-processes may get jumbled due to parallel execution.
 # Note: Uses BSD xargs syntax (macOS) - -0: null-separated, -P: parallel, -I: replace
-parallalProcessFiles() {
+parallelProcessFiles() {
     export -f processFile;
     export SCRIPT_DIR;
     find "$@" -type f -print0 | xargs -0 -P 4 -I {} bash -c 'processFile "$1"' _ "{}"

@@ -93,4 +93,4 @@ function processWebpFile {
 export -f processWebpFile;
 
 # Call the processFiles function with the provided arguments
-parallalProcessFiles "$@"
+parallelProcessFiles "$@"

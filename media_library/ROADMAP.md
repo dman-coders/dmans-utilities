@@ -2,7 +2,7 @@
 
 ## Future Enhancements
 
-### For parallalProcessFiles (process_media.lib)
+### For parallelProcessFiles (process_media.lib)
 
 Now that the parallel processing function is centralized in `process_media.lib`, these enhancements are easier to implement:
 
@@ -14,12 +14,11 @@ find "$@" -type f -print0 | xargs --null --max-procs=$PARALLEL_JOBS ...
 ```
 This enables tuning for different hardware without code changes.
 
-#### 2. **Fix Typo** (Breaking Change)
-Rename `parallalProcessFiles` to `parallelProcessFiles` (correct spelling). Could add compatibility alias:
-```bash
-parallelProcessFiles() { ... }
-parallalProcessFiles() { parallelProcessFiles "$@"; }  # backwards compat
-```
+#### 2. ~~**Fix Typo**~~ (COMPLETED)
+Function renamed from `parallalProcessFiles` to `parallelProcessFiles` (correct spelling).
+- All script references updated
+- Function definition in process_media.lib corrected
+- Tests updated
 
 #### 3. **Progress Reporting**
 Add visibility into parallel processing:

@@ -91,6 +91,6 @@ export SCRIPT_DIR
 export MEDIA_DB
 
 # Process all files
-parallalProcessFiles "$@"
+parallelProcessFiles "$@"
 #processFile "$@"
 

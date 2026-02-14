@@ -24,14 +24,14 @@ cd "$SCRIPT_DIR"
 
 
 begin_test "Run the arbitrary ProcessFile command on a single file "
-parallalProcessFiles "fixtures/test-image.jpg"
+parallelProcessFiles "fixtures/test-image.jpg"
 
 begin_test "Run the arbitrary ProcessFile command on multiple files in parallal : shell globbing"
 files_to_process=( fixtures/*.jpg )
-parallalProcessFiles "${files_to_process[@]}"
+parallelProcessFiles "${files_to_process[@]}"
 
 begin_test "Run the arbitrary ProcessFile command on multiple files in parallal : dir recursion"
-parallalProcessFiles "fixtures/"
+parallelProcessFiles "fixtures/"
 
 finish_test_suite
 exit $?

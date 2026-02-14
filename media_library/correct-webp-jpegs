@@ -59,4 +59,4 @@ function processFile {
 }
 
 # Call the processFiles function with the provided arguments
-parallalProcessFiles "$@"
+parallelProcessFiles "$@"
