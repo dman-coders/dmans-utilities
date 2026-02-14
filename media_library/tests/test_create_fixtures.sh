@@ -2,10 +2,10 @@
 
 # Test suite for process-tags-to-db
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/../process_media.lib"
-PARENT_DIR="$(dirname "$SCRIPT_DIR")"
-FIXTURES_DIR="$SCRIPT_DIR/fixtures"
+TEST_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$TEST_SCRIPT_DIR/../process_media.lib"
+PARENT_DIR="$(dirname "$TEST_SCRIPT_DIR")"
+FIXTURES_DIR="$TEST_SCRIPT_DIR/fixtures"
 
 # Ensure fixtures directory exists
 mkdir -p "$FIXTURES_DIR"

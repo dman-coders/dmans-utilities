@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export MEDIA_DB="$SCRIPT_DIR/test.sqlite"
-source "$SCRIPT_DIR/../process_media.lib"
-source "$SCRIPT_DIR/test_framework.sh"
+TEST_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export MEDIA_DB="$TEST_SCRIPT_DIR/test.sqlite"
+source "$TEST_SCRIPT_DIR/../process_media.lib"
+source "$TEST_SCRIPT_DIR/test_framework.sh"
 
 init_test_suite "ensure_tag_exists and set_synonym Functions"
 

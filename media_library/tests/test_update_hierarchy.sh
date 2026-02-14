@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export MEDIA_DB="$SCRIPT_DIR/test.sqlite"
+TEST_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export MEDIA_DB="$TEST_SCRIPT_DIR/test.sqlite"
 # Source the library to initialize the database
-source "$SCRIPT_DIR/../process_media.lib"
+source "$TEST_SCRIPT_DIR/../process_media.lib"
 
 echo "Testing update_tag_hierarchy function..."
 

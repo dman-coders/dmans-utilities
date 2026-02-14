@@ -2,11 +2,11 @@
 
 # Test suite for process-tags-to-db
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TEST_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export MEDIA_DB="$(realpath $(dirname "${BASH_SOURCE[0]}")/test.sqlite)"
-source "$SCRIPT_DIR/../process_media.lib"
-PARENT_DIR="$(dirname "$SCRIPT_DIR")"
-FIXTURES_DIR="$SCRIPT_DIR/fixtures"
+source "$TEST_SCRIPT_DIR/../process_media.lib"
+PARENT_DIR="$(dirname "$TEST_SCRIPT_DIR")"
+FIXTURES_DIR="$TEST_SCRIPT_DIR/fixtures"
 
 log_notice  "Testing process-tags-to-db"
 
@@ -19,7 +19,7 @@ create_database
 
 
 # Create test fixture if it doesn't exist
-FIXTURES_LIST=$("$SCRIPT_DIR/test_create_fixtures.sh")
+FIXTURES_LIST=$("$TEST_SCRIPT_DIR/test_create_fixtures.sh")
 
 # Count initial tags
 initial_count=$(echo "SELECT COUNT(*) FROM tags;" | sqlite3 "$MEDIA_DB")

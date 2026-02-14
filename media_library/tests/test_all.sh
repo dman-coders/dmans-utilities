@@ -2,12 +2,13 @@
 set -e
 
 export UTIL_DIR=~/.media_processing_test
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export MEDIA_DB="$SCRIPT_DIR/test.sqlite"
+TEST_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TEST_DIR="$TEST_SCRIPT_DIR"
+export MEDIA_DB="$TEST_SCRIPT_DIR/test.sqlite"
 # Use tmpfs for faster test execution
 export SQLITE_USE_TMPFS=1
 
-source "$SCRIPT_DIR/../process_media.lib"
+source "$TEST_SCRIPT_DIR/../process_media.lib"
 
 # Track overall test results
 TOTAL_SUITES=0
@@ -40,20 +41,20 @@ run_test_suite() {
 }
 
 # Core unit tests
-run_test_suite "${SCRIPT_DIR}/test_db_constraints.sh"
-run_test_suite "${SCRIPT_DIR}/test_ensure_tag_exists.sh"
-run_test_suite "${SCRIPT_DIR}/test_synonyms.sh"
-run_test_suite "${SCRIPT_DIR}/test_parent_child.sh"
-run_test_suite "${SCRIPT_DIR}/test_longnames.sh"
-run_test_suite "${SCRIPT_DIR}/test_pipe_in_names.sh"
-run_test_suite "${SCRIPT_DIR}/test_accessor_patterns.sh"
+run_test_suite "${TEST_DIR}/test_db_constraints.sh"
+run_test_suite "${TEST_SCRIPT_DIR}/test_ensure_tag_exists.sh"
+run_test_suite "${TEST_SCRIPT_DIR}/test_synonyms.sh"
+run_test_suite "${TEST_SCRIPT_DIR}/test_parent_child.sh"
+run_test_suite "${TEST_SCRIPT_DIR}/test_longnames.sh"
+run_test_suite "${TEST_SCRIPT_DIR}/test_pipe_in_names.sh"
+run_test_suite "${TEST_SCRIPT_DIR}/test_accessor_patterns.sh"
 
 # Integration tests
 log_info ""
 log_info "Creating test fixtures for integration tests..."
-bash "${SCRIPT_DIR}/test_create_fixtures.sh"
+bash "${TEST_SCRIPT_DIR}/test_create_fixtures.sh"
 
-run_test_suite "${SCRIPT_DIR}/test_process_tags_to_db.sh"
+run_test_suite "${TEST_SCRIPT_DIR}/test_process_tags_to_db.sh"
 
 # Summary
 log_notice ""

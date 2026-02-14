@@ -36,8 +36,8 @@ All tests use consistent data defined in `data_model.md`:
 Include the standard fixtures in your test:
 
 ```bash
-source "$SCRIPT_DIR/../process_media.lib"
-source "$SCRIPT_DIR/fixtures/setup_standard_data.sh"
+source "$TEST_SCRIPT_DIR/../process_media.lib"
+source "$TEST_SCRIPT_DIR/fixtures/setup_standard_data.sh"
 
 # Set up complete world model
 setup_standard_world

@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export MEDIA_DB="$SCRIPT_DIR/test.sqlite"
-source "$SCRIPT_DIR/../process_media.lib"
-source "$SCRIPT_DIR/test_framework.sh"
+TEST_TEST_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+echo "TEST_TEST_SCRIPT_DIR is $TEST_TEST_SCRIPT_DIR"
+
+export MEDIA_DB="$TEST_TEST_SCRIPT_DIR/test.sqlite"
+source "$TEST_TEST_SCRIPT_DIR/../process_media.lib"
+source "$TEST_TEST_SCRIPT_DIR/test_framework.sh"
 
 init_test_suite "Database Foreign Key Constraints"
 
 setup_test_db
+
 
 # Test 1: Reject tag with non-existent type
 begin_test "Reject tag with non-existent type"

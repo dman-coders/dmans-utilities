@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export MEDIA_DB="$SCRIPT_DIR/test.sqlite"
-source "$SCRIPT_DIR/../process_media.lib"
-source "$SCRIPT_DIR/test_framework.sh"
-source "$SCRIPT_DIR/fixtures/setup_standard_data.sh"
+TEST_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export MEDIA_DB="$TEST_SCRIPT_DIR/test.sqlite"
+source "$TEST_SCRIPT_DIR/../process_media.lib"
+source "$TEST_SCRIPT_DIR/test_framework.sh"
+source "$TEST_SCRIPT_DIR/fixtures/setup_standard_data.sh"
 
 init_test_suite "Synonym Lookup Functionality"
 

@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/../process_media.lib"
-source "$SCRIPT_DIR/test_framework.sh"
+TEST_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$TEST_SCRIPT_DIR/../process_media.lib"
+source "$TEST_SCRIPT_DIR/test_framework.sh"
 
 init_test_suite "Bulk processing of media files"
 
 function processFile {
     # Spawned sub-processes need to require their dependenciies again.
-    source "$SCRIPT_DIR/../process_media.lib"
-    source "$SCRIPT_DIR/test_framework.sh"
+    source "$TEST_SCRIPT_DIR/../process_media.lib"
+    source "$TEST_SCRIPT_DIR/test_framework.sh"
 
     local file_path="$1"
     log_info "Processing file: $file_path"
@@ -20,7 +20,7 @@ function processFile {
 }
 
 ######
-cd "$SCRIPT_DIR"
+cd "$TEST_SCRIPT_DIR"
 
 
 begin_test "Run the arbitrary ProcessFile command on a single file "
