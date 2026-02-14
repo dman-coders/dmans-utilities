@@ -195,5 +195,12 @@ jellyfin_filter_properties() {
     if [ -z "$item_json" ]; then
         item_json=$(cat)
     fi
-    echo "$item_json" | jq -r '. | {Id, Name, Type, Path, IsFolder, ParentId, Tags, Album, AlbumId}'
+    echo "$item_json" | json_filter_properties 'Id, Name, Type, Path, IsFolder, ParentId, Tags, Album, AlbumId'
+}
+
+# pipe in the json, specify the fields as comma-separated args.
+json_filter_properties() {
+    local FIELDS="$1"
+    local JSON=$(cat)
+    echo "$JSON" | jq -r ". | {$FIELDS}"
 }

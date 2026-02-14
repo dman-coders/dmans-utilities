@@ -1,84 +1,50 @@
-# Jellyfin Utility Scripts
+# Jellyfin Integration Utilities
+
+## Quick Start
+
+Two ways to use these utilities:
+
+1. **CLI mode:** `./JellyFin ListCollections`
+2. **Library mode:** `source JellyFin; ListCollections`
+
+Both require `.env` to be sourced first:
+```bash
+source .env
+./JellyFin <command> [options]
+```
 
 ## Available Functions
 
-There are two ways to nteract with Jellyfin via these utilities:
-1. **Via the Jellyfin script** - `Jellyfin ListCollections` will execute that command 
-2. **By importing the functions into context and invoking them directly** `source JellyFin; Listcollections` will invoke the `Listcollections()` function directly.
+**System Information:**
+- `TestConnection` - Verify connection to Jellyfin server
+- `SystemInfo` - Get server information and version
+- `MediaFolders` - List all media libraries
+- `Genres` - List all genres in the library
+- `Tags` - List all tags available in the library
 
-Both approaches also require the appropriate environmnet variables to be set and depend on them heavily.
-`source .env` is the recommended way to set them up for local testing.
+**Item Queries:**
+- `Items` - Query items with flexible filtering (type, tags, genres, recursive, limit, pagination)
+- `GetItem` - Get detailed information about a specific item
+- `GetItemByPath` - Look up an item by filesystem path
+- `Hierarchy` - Display library hierarchy as a tree
 
-The following examples assume you have a `.env` file
-and have included the `Jellyfin` library.
+**Collections (BoxSets):**
+- `ListCollections` - List all collections
+- `CreateCollection` - Create a new collection (with optional items)
+- `CollectionItems` - List items in a collection
+- `AddItemToCollection` - Add items to a collection
+- `RemoveItemFromCollection` - Remove items from a collection
+- `FindItemCollections` - Find all collections containing an item
 
+**Item Modifications:**
+- `UpdateItem` - Update general item properties
+- `UpdateTags` - Update tags on an item (append, replace, or clear modes)
+
+For detailed usage and options, use `--help` with any command:
 ```bash
-source .env
-source JellyFin
-```
-
-### ListCollections
-Lists all collections (BoxSets) in your Jellyfin library.
-
-**Usage:**
-```bash
-JellyFin ListCollections
-# or 
-source JellyFin; ListCollections
-```
-
-**Output:**
-```json
-[
-  {
-    "Name": "Cute",
-    "Id": "5f408f9d50b7ddd6da73b69228fbf3c6",
-    "ParentId": "8679d10569ec12981200c4116da3e90b",
-    "ItemCount": null,
-    "Path": "/var/lib/jellyfin/data/collections/Cute [boxset]"
-  },
-  ...
-]
-```
-
-### CreateCollection
-Creates a new collection (BoxSet) in Jellyfin.
-
-**Usage:**
-```bash
-CreateCollection "Collection Name" [ItemIds]
-```
-
-**Examples:**
-```bash
-# Create empty collection
-CreateCollection "My New Collection"
-
-# Create collection and add items
-CreateCollection "Best Videos" "item-id-1,item-id-2,item-id-3"
-```
-
-**Output:**
-```json
-{
-  "Id": "46efac6124bd5d9c930d9cd46a41c520"
-}
-```
-
-### MediaFolders
-Lists all media libraries (CollectionFolders).
-
-**Usage:**
-```bash
-MediaFolders
-```
-
-### Genres
-Lists all genres found in your library.
-
-**Usage:**
-```bash
-Genres
+./JellyFin ListCollections --help
+./JellyFin GetItem --help
+./JellyFin CreateCollection --help
 ```
 
 ## Important Findings

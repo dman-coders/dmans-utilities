@@ -54,20 +54,74 @@ SystemInfo() {
 #
 # Wrapper around: GET /Items (with IncludeItemTypes=BoxSet)
 # OperationId: GetItems
-# Usage: ListCollections [--fields FIELD1,FIELD2,...]
+#
+# Usage: ListCollections [options]
+#
+# Options:
+#   --fields FIELD1,FIELD2   Fields to include (default: Path,ParentId,ItemCount)
+#   --limit N                Limit results (default: unlimited)
+#   --output format          Output format: summary (default), full
+#   --help                   Show this help
 #
 # Returns JSON array of collections
 #
 ListCollections() {
     local FIELDS="Path,ParentId,ItemCount"
-    [ "$1" = "--fields" ] && FIELDS="$2"
+    local LIMIT=""
+    local OUTPUT_FORMAT="summary"
+
+    # Parse options
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --fields)
+                FIELDS="$2"
+                shift 2
+                ;;
+            --limit)
+                LIMIT="$2"
+                shift 2
+                ;;
+            --output)
+                OUTPUT_FORMAT="$2"
+                shift 2
+                ;;
+            --help)
+                log_notice "ListCollections - List all Jellyfin collections (BoxSets)"
+                log_notice ""
+                log_notice "Usage: JellyFin ListCollections [options]"
+                log_notice ""
+                log_notice "Options:"
+                log_notice "  --fields FIELD1,FIELD2   Fields to include (default: Path,ParentId,ItemCount)"
+                log_notice "  --limit N                Limit results (default: unlimited)"
+                log_notice "  --output format          Output format: summary (default), full"
+                log_notice "  --help                   Show this help"
+                return 0
+                ;;
+            *)
+                log_error "Unknown option: $1"
+                return 1
+                ;;
+        esac
+    done
 
     log_debug "Listing all collections"
 
     local ENDPOINT="/Items?IncludeItemTypes=BoxSet&Recursive=true&UserId=$JELLYFIN_USERID&Fields=$FIELDS"
+    [ -n "$LIMIT" ] && ENDPOINT="${ENDPOINT}&Limit=$LIMIT"
 
     jellyfin_request GET "$ENDPOINT"
-    echo "$API_BODY" | jq '.Items | map({Name, Id, ParentId, ItemCount: .RecursiveItemCount, Path})'
+
+    if jellyfin_success; then
+        if [ "$OUTPUT_FORMAT" = "full" ]; then
+            echo "$API_BODY" | jq '.Items'
+        else
+            echo "$API_BODY" | jq '.Items | map({Name, Id, ParentId, ItemCount: .RecursiveItemCount, Path})'
+        fi
+        return 0
+    else
+        log_error "Failed to list collections (HTTP $API_STATUS): $API_BODY"
+        return 1
+    fi
 }
 
 # Items - Query Jellyfin items with flexible filtering
@@ -200,22 +254,55 @@ MediaFolders() {
 # OperationId: GetItem
 # Parameters: userId (automatic), itemId (required), fields (optional)
 #
-# Usage: GetItem ITEM_ID [--fields FIELD1,FIELD2,...]
+# Usage: GetItem ITEM_ID [options]
+#
+# Options:
+#   --fields FIELD1,FIELD2   Fields to include
+#   --output format          Output format: json (default), raw
+#   --help                   Show this help
 #
 # Examples:
 #   JellyFin GetItem "abc123def456"
 #   JellyFin GetItem "abc123def456" --fields Id,Name,Path,Tags
+#   JellyFin GetItem "abc123def456" --fields Name --output json
 #
 GetItem() {
     local ITEM_ID="$1"
+    shift
+
+    jellyfin_require_args 1 $((1 + $#)) "Usage: JellyFin GetItem ITEM_ID [options]" || return 1
+
     local FIELDS=""
+    local OUTPUT_FORMAT="json"
 
-    jellyfin_require_args 1 $# "Usage: JellyFin GetItem ITEM_ID [--fields FIELD1,FIELD2,...]" || return 1
-
-    # Handle --fields flag
-    if [ "$2" = "--fields" ]; then
-        FIELDS="$3"
-    fi
+    # Parse options
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --fields)
+                FIELDS="$2"
+                shift 2
+                ;;
+            --output)
+                OUTPUT_FORMAT="$2"
+                shift 2
+                ;;
+            --help)
+                log_notice "GetItem - Get detailed information about a Jellyfin item"
+                log_notice ""
+                log_notice "Usage: JellyFin GetItem ITEM_ID [options]"
+                log_notice ""
+                log_notice "Options:"
+                log_notice "  --fields FIELD1,FIELD2   Fields to include"
+                log_notice "  --output format          Output format: json (default), raw"
+                log_notice "  --help                   Show this help"
+                return 0
+                ;;
+            *)
+                log_error "Unknown option: $1"
+                return 1
+                ;;
+        esac
+    done
 
     log_info "Retrieving item: $ITEM_ID"
 
@@ -223,7 +310,262 @@ GetItem() {
     [ -n "$FIELDS" ] && ENDPOINT="${ENDPOINT}?Fields=$FIELDS"
 
     jellyfin_request GET "$ENDPOINT"
-    jellyfin_handle_response "" "true"
+
+    if jellyfin_success; then
+        if [ -n "$FIELDS" ]; then
+            API_BODY=$(echo "$API_BODY" | json_filter_properties "$FIELDS")
+        fi
+        if [ "$OUTPUT_FORMAT" = "raw" ]; then
+            echo "$API_BODY"
+        else
+            echo "$API_BODY" | jq '.'
+        fi
+        return 0
+    else
+        log_error "Failed to retrieve item (HTTP $API_STATUS): $API_BODY"
+        return 1
+    fi
+}
+
+# GetItemImages - Get image information for an item
+#
+# API: GET /Items/{itemId}/Images
+# OperationId: GetItemImageInfos
+# Note: Returns metadata about all cached/available images for an item
+#       Includes file paths, dimensions, and file sizes (if pre-cached)
+#
+# Usage: GetItemImages ITEM_ID [options]
+#
+# Options:
+#   --output format          Output format: summary (default), full, paths
+#   --type TYPE              Filter by image type (Primary, Backdrop, etc)
+#   --help                   Show this help
+#
+# Returns:
+#   - summary: { ImageType, ImageTag, Width, Height, Size }
+#   - full: Complete ImageInfo objects
+#   - paths: Just the file paths for cached images
+#
+GetItemImages() {
+    local ITEM_ID="$1"
+    shift
+
+    jellyfin_require_args 1 $((1 + $#)) "Usage: JellyFin GetItemImages ITEM_ID [options]" || return 1
+
+    local OUTPUT_FORMAT="summary"
+    local IMAGE_TYPE=""
+
+    # Parse options
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --output)
+                OUTPUT_FORMAT="$2"
+                shift 2
+                ;;
+            --type)
+                IMAGE_TYPE="$2"
+                shift 2
+                ;;
+            --help)
+                log_notice "GetItemImages - Get image information for an item"
+                log_notice ""
+                log_notice "Usage: JellyFin GetItemImages ITEM_ID [options]"
+                log_notice ""
+                log_notice "Options:"
+                log_notice "  --output format          Output format: summary (default), full, paths"
+                log_notice "  --type TYPE              Filter by image type (Primary, Backdrop, etc)"
+                log_notice "  --help                   Show this help"
+                log_notice ""
+                log_notice "Image types: Primary, Backdrop, Art, Thumb, Disc, Box, Screenshot, Menu, Chapter, Banner, Logo, BoxRear, Profile"
+                return 0
+                ;;
+            *)
+                log_error "Unknown option: $1"
+                return 1
+                ;;
+        esac
+    done
+
+    log_info "Retrieving image information for item: $ITEM_ID"
+
+    jellyfin_request GET "/Items/$ITEM_ID/Images"
+
+    if jellyfin_success; then
+        local result="$API_BODY"
+
+        # Filter by type if specified
+        if [ -n "$IMAGE_TYPE" ]; then
+            result=$(echo "$result" | jq "map(select(.ImageType == \"$IMAGE_TYPE\"))")
+        fi
+
+        # Format output
+        case "$OUTPUT_FORMAT" in
+            summary)
+                echo "$result" | jq '.[] | {ImageType, ImageTag, Width, Height, Size, Path}'
+                ;;
+            paths)
+                echo "$result" | jq '.[] | select(.Path != null) | {ImageType, Path, Size}'
+                ;;
+            full)
+                echo "$result" | jq '.'
+                ;;
+            *)
+                log_error "Unknown output format: $OUTPUT_FORMAT"
+                return 1
+                ;;
+        esac
+        return 0
+    else
+        log_error "Failed to retrieve image info (HTTP $API_STATUS): $API_BODY"
+        return 1
+    fi
+}
+
+# GetItemImageUrl - Construct direct image URL for an item using path-based endpoint
+#
+# API: GET /Items/{itemId}/Images/{imageType}/{imageIndex}/{tag}/{format}/{maxWidth}/{maxHeight}/{percentPlayed}/{unplayedCount}
+# Purpose: Generate the full URL to fetch/download an item's image
+#          Automatically fetches the tag from the item's ImageTags if not specified
+#
+# Usage: GetItemImageUrl ITEM_ID [options]
+#
+# Options:
+#   --type TYPE              Image type (default: Primary)
+#                            Options: Primary, Backdrop, Art, Thumb, Disc, Box, Screenshot, Menu, Chapter, Banner, Logo, BoxRear, Profile
+#   --format FORMAT          Output format (default: Jpg)
+#                            Options: Jpg, Png, Webp, Gif, Bmp, Svg
+#   --maxWidth N             Max width in pixels (default: 400)
+#   --maxHeight N            Max height in pixels (default: 400)
+#   --quality N              JPEG quality 0-100 (default: 90)
+#   --tag TAG                Explicit image tag (auto-fetched from item if not provided)
+#   --index N                Image index (default: 0)
+#   --raw                    Output raw URL only (no markup)
+#   --help                   Show this help
+#
+# Returns: Full image URL that can be used in curl, wget, or browser
+#
+# Examples:
+#   JellyFin GetItemImageUrl abc123 --type Primary --format Jpg --maxWidth 500 --maxHeight 500
+#   JellyFin GetItemImageUrl abc123 --type Backdrop --maxWidth 1920 --maxHeight 1080
+#   curl $(JellyFin GetItemImageUrl abc123 --raw)
+#
+GetItemImageUrl() {
+    local ITEM_ID="$1"
+    shift
+
+    jellyfin_require_args 1 $((1 + $#)) "Usage: JellyFin GetItemImageUrl ITEM_ID [options]" || return 1
+
+    # Defaults
+    local IMAGE_TYPE="Primary"
+    local FORMAT="Jpg"
+    local MAX_WIDTH="400"
+    local MAX_HEIGHT="400"
+    local QUALITY="90"
+    local IMAGE_TAG=""
+    local IMAGE_INDEX="0"
+    local RAW_OUTPUT=false
+
+    # Parse options
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --type)
+                IMAGE_TYPE="$2"
+                shift 2
+                ;;
+            --format)
+                FORMAT="$2"
+                shift 2
+                ;;
+            --maxWidth)
+                MAX_WIDTH="$2"
+                shift 2
+                ;;
+            --maxHeight)
+                MAX_HEIGHT="$2"
+                shift 2
+                ;;
+            --quality)
+                QUALITY="$2"
+                shift 2
+                ;;
+            --tag)
+                IMAGE_TAG="$2"
+                shift 2
+                ;;
+            --index)
+                IMAGE_INDEX="$2"
+                shift 2
+                ;;
+            --raw)
+                RAW_OUTPUT=true
+                shift
+                ;;
+            --help)
+                log_notice "GetItemImageUrl - Construct direct image URL for an item"
+                log_notice ""
+                log_notice "Usage: JellyFin GetItemImageUrl ITEM_ID [options]"
+                log_notice ""
+                log_notice "Options:"
+                log_notice "  --type TYPE              Image type (default: Primary)"
+                log_notice "  --format FORMAT          Output format (default: Jpg)"
+                log_notice "  --maxWidth N             Max width in pixels (default: 400)"
+                log_notice "  --maxHeight N            Max height in pixels (default: 400)"
+                log_notice "  --quality N              JPEG quality 0-100 (default: 90)"
+                log_notice "  --tag TAG                Explicit image tag (auto-fetched if not provided)"
+                log_notice "  --index N                Image index (default: 0)"
+                log_notice "  --raw                    Output raw URL only"
+                log_notice "  --help                   Show this help"
+                return 0
+                ;;
+            *)
+                log_error "Unknown option: $1"
+                return 1
+                ;;
+        esac
+    done
+
+    # If tag not provided, fetch it from the item
+    if [ -z "$IMAGE_TAG" ]; then
+        log_debug "Fetching image tag for item: $ITEM_ID"
+
+        local item_response=$(GetItem "$ITEM_ID" --fields ImageTags 2>/dev/null)
+
+        if [ $? -ne 0 ]; then
+            log_error "Failed to retrieve item image tags"
+            return 1
+        fi
+
+        # Extract the tag for the specified image type
+        IMAGE_TAG=$(echo "$item_response" | jq -r ".ImageTags.\"$IMAGE_TYPE\"" 2>/dev/null)
+
+        if [ -z "$IMAGE_TAG" ] || [ "$IMAGE_TAG" = "null" ]; then
+            log_error "Item does not have a $IMAGE_TYPE image tag"
+            return 1
+        fi
+
+        log_debug "Found image tag: $IMAGE_TAG"
+    fi
+
+    # Build the URL
+    local URL="${JELLYFIN_API_URL}/Items/${ITEM_ID}/Images/${IMAGE_TYPE}/${IMAGE_INDEX}/${IMAGE_TAG}/${FORMAT}/${MAX_WIDTH}/${MAX_HEIGHT}/0/0"
+
+    # Add quality parameter if JPEG
+    if [ "$FORMAT" = "Jpg" ]; then
+        URL="${URL}?quality=${QUALITY}"
+    fi
+
+    # Output
+    if [ "$RAW_OUTPUT" = true ]; then
+        echo "$URL"
+    else
+        log_notice "Image URL: $URL"
+        log_debug "Type: $IMAGE_TYPE, Format: $FORMAT, Size: ${MAX_WIDTH}x${MAX_HEIGHT}, Tag: $IMAGE_TAG"
+        log_notice "Download with:"
+        log_notice "  curl -o thumbnail.$FORMAT \"$URL\""
+        log_notice "  wget -O thumbnail.$FORMAT \"$URL\""
+    fi
+
+    return 0
 }
 
 # GetItemByPath - Get Jellyfin item by filesystem path
@@ -353,28 +695,121 @@ Tags() {
 # API: POST /Collections
 # OperationId: CreateCollection
 # API Parameters: name (required), ids (optional), parentId (optional), isLocked (optional)
-# Note: Only exposing name and ids parameters. parentId and isLocked not currently exposed.
 #
-# Usage: CreateCollection "Collection Name" [ItemIds]
+# Usage: CreateCollection [options] "Collection Name"
+#        CreateCollection "Collection Name" [ItemIds]  (legacy positional form)
 #
-# Examples:
+# Options (new style):
+#   --name NAME              Collection name (required if not positional)
+#   --items ID1,ID2,...      Comma-separated item IDs to add
+#   --items-space ID1 ID2... Space-separated item IDs to add
+#   --parent-id ID           Parent collection ID (note: Jellyfin doesn't support nesting)
+#   --is-locked              Lock the collection (prevent modifications)
+#   --output format          Output format: id (default), full
+#   --help                   Show this help
+#
+# Examples (new style):
+#   JellyFin CreateCollection --name "My Collection"
+#   JellyFin CreateCollection --name "Best Videos" --items "id1,id2,id3"
+#   JellyFin CreateCollection --name "Best Videos" --items-space id1 id2 id3
+#   JellyFin CreateCollection --name "Locked" --is-locked
+#
+# Examples (legacy positional):
 #   JellyFin CreateCollection "My Collection"
 #   JellyFin CreateCollection "Best Videos" "id1,id2,id3"
 #
 CreateCollection() {
-    local NAME="$1"
-    local ITEM_IDS="$2"
+    local NAME=""
+    local ITEM_IDS=""
+    local PARENT_ID=""
+    local IS_LOCKED="false"
+    local OUTPUT_FORMAT="id"
+    local POSITIONAL_NAME=""
+    local POSITIONAL_ITEMS=""
 
-    jellyfin_require_args 1 $# "Usage: JellyFin CreateCollection \"Collection Name\" [ItemIds]" || return 1
+    # Detect if using legacy positional form (first arg doesn't start with --)
+    if [[ $# -gt 0 && "$1" != --* ]]; then
+        POSITIONAL_NAME="$1"
+        POSITIONAL_ITEMS="$2"
+        NAME="$POSITIONAL_NAME"
+        [ -n "$POSITIONAL_ITEMS" ] && ITEM_IDS="$POSITIONAL_ITEMS"
+    else
+        # Parse options (new style)
+        while [[ $# -gt 0 ]]; do
+            case $1 in
+                --name)
+                    NAME="$2"
+                    shift 2
+                    ;;
+                --items)
+                    ITEM_IDS="$2"
+                    shift 2
+                    ;;
+                --items-space)
+                    shift
+                    # Collect all remaining args as space-separated IDs, join with comma
+                    local items_array=()
+                    while [[ $# -gt 0 && "$1" != --* ]]; do
+                        items_array+=("$1")
+                        shift
+                    done
+                    ITEM_IDS=$(IFS=,; echo "${items_array[*]}")
+                    ;;
+                --parent-id)
+                    PARENT_ID="$2"
+                    shift 2
+                    ;;
+                --is-locked)
+                    IS_LOCKED="true"
+                    shift
+                    ;;
+                --output)
+                    OUTPUT_FORMAT="$2"
+                    shift 2
+                    ;;
+                --help)
+                    log_notice "CreateCollection - Create a new Jellyfin collection"
+                    log_notice ""
+                    log_notice "Usage: JellyFin CreateCollection [options] \"Collection Name\""
+                    log_notice "    or: JellyFin CreateCollection \"Collection Name\" [ItemIds]  (legacy)"
+                    log_notice ""
+                    log_notice "Options:"
+                    log_notice "  --name NAME              Collection name (required)"
+                    log_notice "  --items ID1,ID2,...      Comma-separated item IDs"
+                    log_notice "  --items-space ID1 ID2... Space-separated item IDs"
+                    log_notice "  --parent-id ID           Parent collection ID"
+                    log_notice "  --is-locked              Lock the collection"
+                    log_notice "  --output format          Output format: id (default), full"
+                    log_notice "  --help                   Show this help"
+                    return 0
+                    ;;
+                *)
+                    log_error "Unknown option: $1"
+                    return 1
+                    ;;
+            esac
+        done
+    fi
+
+    # Validate required name
+    if [ -z "$NAME" ]; then
+        log_error "Collection name is required"
+        log_error "Usage: JellyFin CreateCollection --name \"Collection Name\" [options]"
+        return 1
+    fi
 
     # URL encode the name
     local ENCODED_NAME=$(printf %s "$NAME" | jq -sRr @uri)
 
     local URL_PARAMS="?Name=$ENCODED_NAME&UserId=$JELLYFIN_USERID"
     [ -n "$ITEM_IDS" ] && URL_PARAMS="${URL_PARAMS}&Ids=$ITEM_IDS"
+    [ -n "$PARENT_ID" ] && URL_PARAMS="${URL_PARAMS}&ParentId=$PARENT_ID"
+    [ "$IS_LOCKED" = "true" ] && URL_PARAMS="${URL_PARAMS}&IsLocked=true"
 
     log_notice "Creating collection: $NAME"
     [ -n "$ITEM_IDS" ] && log_debug "  Adding items: $ITEM_IDS"
+    [ -n "$PARENT_ID" ] && log_debug "  Parent ID: $PARENT_ID"
+    [ "$IS_LOCKED" = "true" ] && log_debug "  Locked: yes"
 
     jellyfin_request POST "/Collections$URL_PARAMS"
 
@@ -382,7 +817,12 @@ CreateCollection() {
         local COLLECTION_ID=$(echo "$API_BODY" | jq -r '.Id')
         log_success "Collection created successfully"
         log_notice "  Collection ID: $COLLECTION_ID"
-        echo "$COLLECTION_ID"
+
+        if [ "$OUTPUT_FORMAT" = "full" ]; then
+            echo "$API_BODY" | jq '.'
+        else
+            echo "$COLLECTION_ID"
+        fi
         return 0
     else
         log_error "Failed to create collection: $API_BODY"
