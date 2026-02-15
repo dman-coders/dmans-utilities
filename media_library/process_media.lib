@@ -194,26 +194,49 @@ get_parent(){
 # Usage: get_tag_children "ParentTag"
 # Returns: child1,child2,child3
 get_tag_children(){
-  local tag_input=$1
+  local tag_input="${1:-}"  # Allow empty string for root/orphan tags
 
-  # Resolve parent tag to canonical name
-  local parent_name=$(get_tag_name "$tag_input")
-  if [[ -z "$parent_name" ]]; then
-    log_debug "Tag '$tag_input' not found, no children"
-    return 1
+  local parent_name
+  if [[ -z "$tag_input" ]]; then
+    # Empty string means get root/orphan tags (parent IS NULL)
+    parent_name=""
+  else
+    # Resolve parent tag to canonical name
+    parent_name=$(get_tag_name "$tag_input")
+    if [[ -z "$parent_name" ]]; then
+      log_debug "Tag '$tag_input' not found, no children"
+      return 1
+    fi
   fi
 
-  # Get all children of this parent
-  SQL="SELECT name FROM tags WHERE parent='$parent_name' ORDER BY name;"
+  # Get all children of this parent (or roots if parent_name is empty)
+  local SQL
+  if [[ -z "$parent_name" ]]; then
+    SQL="SELECT name FROM tags WHERE parent IS NULL OR parent = '' ORDER BY name;"
+  else
+    SQL="SELECT name FROM tags WHERE parent='$parent_name' ORDER BY name;"
+  fi
+
   local result=$(sql_fast "$SQL")
 
   if [[ -n "$result" ]]; then
-    log_debug "Found children of '$parent_name': $result"
+    # Convert newline-separated to CSV using string substitution (no read/heredoc)
+    local csv="${result//$'\n'/,}"
+#    if [[ -z "$parent_name" ]]; then
+#      log_debug "Found root/orphan tags: $csv"
+#    else
+#      log_debug "Found children of '$parent_name': $csv"
+#    fi
+    echo "$csv"
+    return 0
   else
-    log_debug "'$parent_name' has no children"
+#    if [[ -z "$parent_name" ]]; then
+#      log_debug "No root/orphan tags found"
+#    else
+#      log_debug "'$parent_name' has no children"
+#    fi
+    return 1
   fi
-
-  echo "$result"
 }
 
 # Set parent relationship using tag names as foreign keys.
@@ -555,12 +578,28 @@ update_tag_hierarchy(){
 # If a tag has synonyms, list each of them, indented, after the tag.
 # If a tag has a parent, it will be displayed under its parent with indentation.
 dump_tags(){
-  # First, get all root tags (tags with no parent)
-  SQL="SELECT name, long_name FROM tags WHERE parent IS NULL OR parent = '' ORDER BY name;"
-  root_tags=$(sql_fast "$SQL")
+  # Get all root/orphan tags using the abstraction
+  local root_tag_csv=$(get_tag_children "")
+  if [[ -z "$root_tag_csv" ]]; then
+    log_debug "No root tags to display"
+    return 0
+  fi
 
-  # Process each root tag
-  while IFS="$DB_DELIMITER" read -r tag_name long_name <<< "$root_tags"; do
+  # Process each root tag (convert CSV to array)
+  local IFS=','
+  local -a root_tags_array=($root_tag_csv)
+  unset IFS
+
+  for tag_name in "${root_tags_array[@]}"; do
+    # Trim whitespace
+    tag_name=$(echo "$tag_name" | xargs)
+    [[ -z "$tag_name" ]] && continue
+
+    # Get full tag data to check type
+    local tag_data=$(get_tag_data "$tag_name")
+    local long_name
+    IFS="${DB_DELIMITER}" read -r tag_name long_name tag_type parent <<< "$tag_data"
+
     # Display the root tag
     if [ "$tag_type" = "container" ]; then
       printf "\033[90m%s\033[0m\n" "$tag_name [root]"
