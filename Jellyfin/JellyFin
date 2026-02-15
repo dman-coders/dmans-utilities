@@ -634,23 +634,45 @@ GetItemByPath() {
 #
 UpdateItem() {
     local ITEM_ID="$1"
-    local PAYLOAD="$2"
+    local PATCH_PAYLOAD="$2"
 
     jellyfin_require_args 2 $# "Usage: JellyFin UpdateItem ITEM_ID '{\"field\": value, ...}'" || return 1
 
-    if [ -z "$PAYLOAD" ]; then
+    if [ -z "$PATCH_PAYLOAD" ]; then
         log_error "Payload cannot be empty"
         return 1
     fi
 
     log_notice "Updating item: $ITEM_ID"
-    log_debug "Payload: $PAYLOAD"
+    log_debug "Patch payload: $PATCH_PAYLOAD"
 
-    jellyfin_request POST "/Items/$ITEM_ID" "$PAYLOAD"
+    # Jellyfin API requires complete item object, not just patch
+    # So we must: GET current item -> merge patch -> POST complete object
+
+    # Step 1: Get current item
+    log_debug "Fetching current item state"
+    local current_item_raw=$(GetItem "$ITEM_ID" --output raw 2>&1 | tail -1)
+    if [ -z "$current_item_raw" ]; then
+        log_error "Failed to fetch current item state"
+        return 1
+    fi
+
+    # Step 2: Merge patch into current item
+    log_debug "Merging patch into item"
+    local merged_payload
+    merged_payload=$(echo "$current_item_raw" | jq ". * $PATCH_PAYLOAD" 2>/dev/null)
+    if [ -z "$merged_payload" ]; then
+        log_error "Failed to merge patch payload"
+        return 1
+    fi
+
+    log_debug "Complete merged payload size: $(echo "$merged_payload" | wc -c) bytes"
+
+    # Step 3: POST complete merged item
+    jellyfin_request POST "/Items/$ITEM_ID" "$merged_payload"
 
     if jellyfin_success; then
         log_success "Item updated successfully"
-        echo "$API_BODY" | jq '.' 2>/dev/null || echo "$API_BODY"
         return 0
     else
         log_error "Failed to update item: $API_BODY"
@@ -1030,11 +1052,12 @@ UpdateTags() {
     fi
 
     # Build JSON payload
-    local PAYLOAD=$(jq -n --argjson tags "$TAGS_JSON" '{Tags: $tags}')
+    local PAYLOAD=$(jq -n --argjson tags "$TAGS_JSON" '{"Tags": $tags}')
 
     log_debug "Tags (mode: $MODE): $(echo "$TAGS_JSON" | jq '.')"
 
     # Update the item via UpdateItem function
+    log_debug "UpdateItem $ITEM_ID \"$PAYLOAD\" "
     local RESULT=$(UpdateItem "$ITEM_ID" "$PAYLOAD" 2>/dev/null)
 
     if [ $? -eq 0 ]; then

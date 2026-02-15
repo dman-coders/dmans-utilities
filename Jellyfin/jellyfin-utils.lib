@@ -18,7 +18,6 @@
 
 [[ $JELLYFIN_DIR ]] || JELLYFIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 [[ $SCRIPT_DIR ]] || SCRIPT_DIR="$(dirname $JELLYFIN_DIR)"
-echo "$JELLYFIN_DIR .. $SCRIPT_DIR"
 source "$SCRIPT_DIR/feedback.lib"
 
 # these valuse are required, if not set, use the nearest  .env ones.
@@ -182,9 +181,11 @@ jellyfin_item_local_path() {
     # Extract Path field from JSON
     local remote_path
     remote_path=$(echo "$get_item_output" | jq -r '.Path // empty' 2>/dev/null)
+    log_debug "remote_path for item $item_id: $remote_path"
 
     if [[ -z "$remote_path" ]]; then
         log_debug "jellyfin_item_local_path: No Path field found for item $item_id"
+        log_error $(echo "$get_item_output" | jq )
         return 1
     fi
 

@@ -128,7 +128,8 @@ while IFS= read -r tag; do
 done <<< "$tags"
 
 # Call UpdateTags with mode and tags
-if ! jf UpdateTags "$ITEM_ID" "$MODE" "${tag_args[@]}" > /dev/null 2>&1; then
+log_debug "$jf_script UpdateTags $ITEM_ID $MODE ${tag_args[@]}"
+if ! $jf_script UpdateTags "$ITEM_ID" "$MODE" "${tag_args[@]}" > /dev/null 2>&1; then
     log_error "Failed to update tags for item $ITEM_ID"
     exit 1
 fi
@@ -137,7 +138,8 @@ log_success "Tags updated successfully"
 
 # Step 6: Confirm tags applied
 log_notice "Verifying tags applied..."
-result=$(jf GetItem "$ITEM_ID" --fields Tags --output raw 2>/dev/null)
+log_debug "$jf_script GetItem $ITEM_ID --fields Tags --output raw"
+result=$($jf_script GetItem "$ITEM_ID" --fields Tags --output raw 2>/dev/null)
 if [[ $? -eq 0 ]]; then
     applied_tags=$(echo "$result" | jq '.Tags // []' 2>/dev/null)
     log_debug "Applied tags:"
