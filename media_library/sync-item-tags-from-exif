@@ -1,0 +1,148 @@
+#!/usr/bin/env bash
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/process_media.lib"
+source "$SCRIPT_DIR/../Jellyfin/jellyfin-utils.lib"
+source "$SCRIPT_DIR/../feedback.lib"
+
+# Usage and help
+usage() {
+    cat >&2 << 'EOF'
+sync-item-tags-from-exif - Sync EXIF tags to Jellyfin item
+
+Usage:
+  sync-item-tags-from-exif ITEM_ID [--dry-run] [--append|--replace]
+
+Arguments:
+  ITEM_ID              Jellyfin item UUID (required)
+
+Options:
+  --dry-run            Extract and print tags, skip API write
+  --append             Merge with existing Jellyfin tags (default)
+  --replace            Overwrite all Jellyfin tags
+  --help               Show this help
+
+Examples:
+  sync-item-tags-from-exif "550e8400-e29b-41d4-a716-446655440000"
+  sync-item-tags-from-exif "550e8400-e29b-41d4-a716-446655440000" --dry-run
+  sync-item-tags-from-exif "550e8400-e29b-41d4-a716-446655440000" --replace
+
+EOF
+}
+
+# Parse arguments
+ITEM_ID=""
+DRY_RUN=false
+MODE="--append"
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --help)
+            usage
+            exit 0
+            ;;
+        --dry-run)
+            DRY_RUN=true
+            shift
+            ;;
+        --append)
+            MODE="--append"
+            shift
+            ;;
+        --replace)
+            MODE="--replace"
+            shift
+            ;;
+        -*)
+            log_error "Unknown option: $1"
+            usage
+            exit 1
+            ;;
+        *)
+            if [[ -z "$ITEM_ID" ]]; then
+                ITEM_ID="$1"
+            else
+                log_error "Unexpected argument: $1"
+                usage
+                exit 1
+            fi
+            shift
+            ;;
+    esac
+done
+
+# Validate ITEM_ID
+if [[ -z "$ITEM_ID" ]]; then
+    log_error "ITEM_ID is required"
+    usage
+    exit 1
+fi
+
+# Step 1: Resolve file path for the item
+log_notice "Resolving file path for item: $ITEM_ID"
+local_path=$(jellyfin_item_local_path "$ITEM_ID")
+if [[ $? -ne 0 || -z "$local_path" ]]; then
+    log_error "Could not resolve path for item $ITEM_ID"
+    exit 1
+fi
+
+log_debug "Resolved path: $local_path"
+
+# Verify file is readable
+if [[ ! -f "$local_path" ]]; then
+    log_error "File not readable: $local_path"
+    exit 1
+fi
+
+# Step 2: Extract EXIF tags
+log_notice "Extracting EXIF tags from: $local_path"
+tags=$(extract_exif_tags "$local_path")
+if [[ $? -ne 0 || -z "$tags" ]]; then
+    log_warn "No EXIF tags found in $local_path"
+    exit 0
+fi
+
+# Count extracted tags
+tag_count=$(echo "$tags" | wc -l)
+log_notice "Found $tag_count EXIF tag(s)"
+
+# Step 3: Display tags (for dry-run or info)
+log_debug "Tags to sync:"
+echo "$tags" | sed 's/^/  /'
+
+# Step 4: Dry-run mode - exit after printing
+if [[ "$DRY_RUN" = true ]]; then
+    log_notice "Dry-run mode: skipping API write"
+    exit 0
+fi
+
+# Step 5: Push tags to Jellyfin via UpdateTags
+log_notice "Pushing tags to Jellyfin (mode: $MODE)..."
+
+# Convert newline-separated tags to arguments for UpdateTags
+declare -a tag_args
+while IFS= read -r tag; do
+    tag_args+=("$tag")
+done <<< "$tags"
+
+# Call UpdateTags with mode and tags
+if ! jf UpdateTags "$ITEM_ID" "$MODE" "${tag_args[@]}" > /dev/null 2>&1; then
+    log_error "Failed to update tags for item $ITEM_ID"
+    exit 1
+fi
+
+log_success "Tags updated successfully"
+
+# Step 6: Confirm tags applied
+log_notice "Verifying tags applied..."
+result=$(jf GetItem "$ITEM_ID" --fields Tags --output raw 2>/dev/null)
+if [[ $? -eq 0 ]]; then
+    applied_tags=$(echo "$result" | jq '.Tags // []' 2>/dev/null)
+    log_debug "Applied tags:"
+    echo "$applied_tags" | jq '.[]' 2>/dev/null | sed 's/^/  /'
+else
+    log_warn "Could not verify tags (GetItem failed)"
+fi
+
+log_success "Sync complete"
+exit 0

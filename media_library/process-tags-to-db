@@ -22,52 +22,17 @@ processFile() {
         return 1
     fi
 
-    # Check if this is actually a media file with EXIF support
-    local mime_type=$(exiftool -s -S -MimeType "${source_file}" 2>/dev/null)
-    if [[ -z "$mime_type" ]]; then
-        log_debug "Skipping $source_file (no EXIF support)"
+    log_notice "Processing: $source_file"
+
+    # Extract tags from EXIF metadata
+    local tag_output
+    if ! tag_output=$(extract_exif_tags "$source_file" 2>/dev/null); then
+        log_debug "  No tags found in $source_file"
         return 0
     fi
 
-    log_notice "Processing: $source_file"
-
-    # Extract all tag fields from the file
-    local all_tags=()
-
-    # Tag fields to extract from EXIF metadata
-    # Based on what Adobe Bridge and other tools use.
-    # Start by looking for heirarchical tags first.
-    # This means that any tree structure will be created before the short tags are used.
-    # If Heirarchical tagging is in place, then the flat tags found here wiull usually duplicatate those.
-    # It's fine to double up.
-    local tag_fields=( HierarchicalSubject Subject Keywords  Categories CatalogSets TagsList )
-
-    # This runs exiftool half dozen time, may be a quicker way.
-    for field in "${tag_fields[@]}"; do
-        # Extract the field value(s) - exiftool may return multiple values
-        local field_values=$(exiftool -s -s -s "-${field}" "${source_file}" 2>/dev/null)
-        unset items
-        if [[ -n "$field_values" ]]; then
-            # Split by newlines and commas (exiftool uses both for multiple values)
-            # but not spaces within tags
-            while IFS= read -r line; do
-                # Split by comma as well
-                IFS=',' read -ra items <<< "$line"
-                for item in "${items[@]}"; do
-                    # Trim whitespace
-                    item=$(echo "$item" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
-                    if [[ -n "$item" ]]; then
-                        all_tags+=("$item")
-                    fi
-                done
-            done <<< "$field_values"
-        fi
-        log_notice "Value of $field : $field_values = [${items[*]}]"
-    done
-
-    # Remove duplicates and process each unique tag
-    # Use mapfile to preserve tags with spaces
-    mapfile -t unique_tags < <(printf '%s\n' "${all_tags[@]}" | sort -u)
+    # Convert newline-separated output to array
+    mapfile -t unique_tags < <(echo "$tag_output")
 
     if [[ ${#unique_tags[@]} -eq 0 ]]; then
         log_debug "  No tags found in $source_file"

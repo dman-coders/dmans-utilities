@@ -646,6 +646,66 @@ display_child_tags(){
   done
 }
 
+# Extract EXIF tags from a media file
+# Pulls tags from multiple EXIF metadata fields and returns deduplicated list
+# Checks MIME type to ensure file is supported by exiftool
+#
+# Usage: extract_exif_tags "/path/to/file.jpg"
+# Returns: Newline-separated list of tag strings (or empty if unsupported/no tags)
+#
+# Tag fields checked (in order):
+#   HierarchicalSubject, Subject, Keywords, Categories, CatalogSets, TagsList
+#
+# Pipe-delimited entries (Location|Inside|Bedroom) are expanded to all levels
+# Results are deduplicated via sort -u
+#
+extract_exif_tags() {
+    local file_path="$1"
+
+    if [[ ! -f "$file_path" ]]; then
+        log_error "extract_exif_tags: File not found: $file_path"
+        return 1
+    fi
+
+    # Check if this file is supported by exiftool (has MIME type)
+    local mime_type=$(exiftool -s -S -MimeType "$file_path" 2>/dev/null)
+    if [[ -z "$mime_type" ]]; then
+        log_debug "extract_exif_tags: $file_path - no EXIF support (MIME type not found)"
+        return 1
+    fi
+
+    local all_tags=()
+    local tag_fields=( HierarchicalSubject Subject Keywords Categories CatalogSets TagsList )
+
+    # Extract each tag field
+    for field in "${tag_fields[@]}"; do
+        local field_values=$(exiftool -s -s -s "-${field}" "$file_path" 2>/dev/null)
+
+        if [[ -n "$field_values" ]]; then
+            # Split by newlines and commas (exiftool uses both for multiple values)
+            while IFS= read -r line; do
+                # Split by comma as well
+                IFS=',' read -ra items <<< "$line"
+                for item in "${items[@]}"; do
+                    # Trim whitespace
+                    item=$(echo "$item" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+                    if [[ -n "$item" ]]; then
+                        all_tags+=("$item")
+                    fi
+                done
+            done <<< "$field_values"
+        fi
+    done
+
+    # Deduplicate and output
+    if [[ ${#all_tags[@]} -gt 0 ]]; then
+        printf '%s\n' "${all_tags[@]}" | sort -u
+        return 0
+    fi
+
+    return 1
+}
+
 # Parallel file processing utility
 # Processes all files recursively in the input arguments using parallel execution.
 # Expects the caller to define a 'processFile' function and export any additional
