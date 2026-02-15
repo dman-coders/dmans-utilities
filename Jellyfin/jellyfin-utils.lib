@@ -16,9 +16,22 @@
 #  If running on the same server, then these will be the same,
 #  but if virtualized or using a mapped drive, then this sets up the mapping.
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/../feedback.lib"
-alias jf="$(realpath "${SCRIPT_DIR}/JellyFin")"
+[[ $JELLYFIN_DIR ]] || JELLYFIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+[[ $SCRIPT_DIR ]] || SCRIPT_DIR="$(dirname $JELLYFIN_DIR)"
+echo "$JELLYFIN_DIR .. $SCRIPT_DIR"
+source "$SCRIPT_DIR/feedback.lib"
+
+# these valuse are required, if not set, use the nearest  .env ones.
+[[ $JELLYFIN_USERID ]] || source "$JELLYFIN_DIR/.env" 2>/dev/null || log_error "JELLYFIN_USERID not set"
+
+
+
+# Ensure we knw where the Jellyfin CLI is. It should be in the same directory as this script, but if not, we will error out when trying to use it.
+jf_script="${JELLYFIN_DIR}/JellyFin"
+if [[ ! -f "$jf_script" ]]; then
+    log_error "jellyfin_item_local_path: JellyFin script not found"
+    return 1
+fi
 
 # API Configuration
 export JELLYFIN_API_URL="${JELLYFIN_API_URL:-http://$JELLYFIN_HOST:$JELLYFIN_PORT}"
@@ -156,20 +169,10 @@ jellyfin_item_local_path() {
         return 1
     fi
 
-    # Source JellyFin to get access to GetItem (if not already available)
-    local jf_script="$(realpath "$(dirname "${BASH_SOURCE[0]}")/JellyFin")"
-    if [[ ! -f "$jf_script" ]]; then
-        log_error "jellyfin_item_local_path: JellyFin script not found"
-        return 1
-    fi
-
     # Use jf alias if available, otherwise source the script
     local get_item_output
-    if command -v jf &>/dev/null; then
-        get_item_output=$(jf GetItem "$item_id" --output raw 2>/dev/null)
-    else
-        get_item_output=$("$jf_script" GetItem "$item_id" --output raw 2>/dev/null)
-    fi
+    log_debug "$jf_script GetItem $item_id --output raw "
+    get_item_output=$("$jf_script" GetItem "$item_id" --output raw 2>/dev/null)
 
     if [[ -z "$get_item_output" ]]; then
         log_debug "jellyfin_item_local_path: Failed to retrieve item $item_id"

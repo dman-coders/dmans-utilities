@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/process_media.lib"
-source "$SCRIPT_DIR/../Jellyfin/jellyfin-utils.lib"
-source "$SCRIPT_DIR/../feedback.lib"
+MEDIA_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(dirname $MEDIA_LIB_DIR)"
+echo " $MEDIA_LIB_DIR and $SCRIPT_DIR"
+source "$MEDIA_LIB_DIR/process_media.lib"
+source "$SCRIPT_DIR/Jellyfin/jellyfin-utils.lib"
+source "$SCRIPT_DIR/feedback.lib"
 
 # Usage and help
 usage() {

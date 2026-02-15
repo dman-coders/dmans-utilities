@@ -3,18 +3,16 @@
 # utilities re-used by the media processing tools
 # Define MEDIA_DB path before initializing to override default location.
 
-MEDIA_LIB_DIR=${MEDIA_LIB_DIR:-~/.media_processing}
-mkdir -p "$MEDIA_LIB_DIR"
-MEDIA_DB="${MEDIA_DB:-${MEDIA_LIB_DIR}/media.sqlite}"
+[[ $MEDIA_LIB_DIR ]] || MEDIA_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+[[ $SCRIPT_DIR ]] || SCRIPT_DIR="$(dirname "$MEDIA_LIB_DIR")"
 
 # Source SQLite database management functions
-LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$LIB_DIR/sqlite.lib"
+source "${SCRIPT_DIR}/sqlite.lib"
+source "${SCRIPT_DIR}/feedback.lib"
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/"
-source "${SCRIPT_DIR}sqlite.lib"
-source "${SCRIPT_DIR}../feedback.lib"
-
+MEDIA_DATA_DIR=${MEDIA_DATA_DIR:-~/.media_processing}
+mkdir -p "$MEDIA_DATA_DIR"
+MEDIA_DB="${MEDIA_DB:-${MEDIA_DATA_DIR}/media.sqlite}"
 
 # Check if a tag exists in the database, and create it if not
 # usage: ensure_tag_exists tag_name [tag_type] [parent]
