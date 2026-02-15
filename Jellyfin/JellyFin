@@ -569,6 +569,44 @@ GetItemImageUrl() {
     return 0
 }
 
+GetItemLocalPath() {
+    local ITEM_ID="$1"
+
+    if [[ -z "$ITEM_ID" ]]; then
+        log_error "GetItemLocalPath: item_id required"
+        return 1
+    fi
+
+    local get_item_output
+    log_debug "Getting item for local path: $ITEM_ID"
+    get_item_output=$(GetItem "$ITEM_ID" --output raw 2>/dev/null)
+
+    if [[ -z "$get_item_output" ]]; then
+        log_error "GetItemLocalPath: Failed to retrieve item $ITEM_ID"
+        return 1
+    fi
+
+    local remote_path
+    remote_path=$(echo "$get_item_output" | jq -r '.Path // empty' 2>/dev/null)
+    log_debug "Remote path for item $ITEM_ID: $remote_path"
+
+    if [[ -z "$remote_path" ]]; then
+        log_error "Item does not have a Path field"
+        return 1
+    fi
+
+    # Map remote path to local path if mapping is configured
+    local local_path
+    if [ -n "$JELLYFIN_ROOT_DATA_FOLDER" ] && [ -n "$JELLYFIN_LOCAL_DATA_FOLDER" ]; then
+        local_path="${remote_path/#$JELLYFIN_ROOT_DATA_FOLDER/$JELLYFIN_LOCAL_DATA_FOLDER}"
+        log_debug "Mapped local path: $local_path"
+        echo "$local_path"
+    else
+        log_warn "JELLYFIN_ROOT_DATA_FOLDER or JELLYFIN_LOCAL_DATA_FOLDER not set, returning remote path"
+        echo "$remote_path"
+    fi
+}
+
 # GetItemByPath - Get Jellyfin item by filesystem path
 #
 # Wrapper around: GET /Items (client-side path filtering)
@@ -665,7 +703,7 @@ UpdateItem() {
     fi
 
     # Step 2: Merge patch into current item
-    log_debug "Merging patch into item"
+    log_debug "Merging JSON patch into data Item to perform Update"
     local merged_payload
     merged_payload=$(echo "$current_item_raw" | jq ". * $PATCH_PAYLOAD")
     if [ -z "$merged_payload" ]; then
@@ -1019,8 +1057,9 @@ UpdateTags() {
         shift
 
         # Fetch current tags via GetItem, suppress logging
-        local CURRENT=$(GetItem "$ITEM_ID" --fields Tags 2>&1 | jq -R 'select(startswith("{")) | fromjson?' 2>/dev/null | jq -s '.[0]' 2>/dev/null)
-        local EXISTING_TAGS=$(echo "$CURRENT" | jq '.Tags // []' )
+        log_notice "Current tags are $(GetItem $ITEM_ID --fields Tags )"
+        # { "Tags": [ "tag3", "tag4" ] }
+        local EXISTING_TAGS_JSON=$(GetItem "$ITEM_ID" --fields Tags | jq '.Tags // []' )
 
         # Merge new tags with existing
         local NEW_TAGS=()
@@ -1028,8 +1067,10 @@ UpdateTags() {
             NEW_TAGS+=("$1")
             shift
         done
+        NEW_TAGS_JSON=$(printf '%s\n' "${NEW_TAGS[@]}" | jq -R . | jq -s .)
 
-        TAGS_JSON=$(echo "$EXISTING_TAGS" | jq ". + $(printf '%s\n' "${NEW_TAGS[@]}" | jq -R . | jq -s .)")
+        log_debug "Merging Existing tags  $EXISTING_TAGS_JSON with New tags $NEW_TAGS $NEW_TAGS_JSON ${NEW_TAGS[*]}"
+        TAGS_JSON=$(echo "$EXISTING_TAGS_JSON" | jq ". + $(printf '%s\n' "${NEW_TAGS[@]}" | jq -R . | jq -s .) | sort | unique")
 
     elif [ "$1" = "--clear" ]; then
         MODE="clear"
