@@ -68,6 +68,8 @@ ensure_tag_exists(){
 # Will search for a tag by name, or synonym.
 # returns a csv listing "name, long_name, type, parent"
 # That has to be parsed by the caller.
+# The returned name may be different from the input if a synonym was used or capitalization was adjusted.
+# caller should use the returned name from now on.
 get_tag_data(){
   tag_name=$1
   long_name=$tag_name
@@ -80,7 +82,7 @@ get_tag_data(){
   # Fall back to synonym after that
   # If asked for long_name, return that first
   #SQL="SELECT tags.name, tags.long_name, tags.type, tags.parent FROM tags WHERE tags.long_name='$long_name';"
-  SQL="SELECT tags.name, tags.long_name, tags.type, tags.parent FROM tags WHERE tags.long_name='$long_name' OR tags.name='$tag_name';"
+  SQL="SELECT tags.name, tags.long_name, tags.type, tags.parent FROM tags WHERE LOWER(tags.long_name)=LOWER('$long_name') OR LOWER(tags.name)=LOWER('$tag_name');"
   result=$(sql_fast "$SQL")
 
   #if [ -z "$result" ]; then
@@ -91,10 +93,10 @@ get_tag_data(){
   # Join the tags to the synonyms table to find the result by synonym
   if [ -z "$result" ]; then
     # log_debug "Looking for synonyms of '$tag_name'"
-    SQL="SELECT tags.name, tags.long_name, tags.type, tags.parent FROM synonyms INNER JOIN tags ON synonyms.canonic = tags.name WHERE synonyms.synonym='$tag_name';"
+    SQL="SELECT tags.name, tags.long_name, tags.type, tags.parent FROM synonyms INNER JOIN tags ON LOWER(synonyms.canonic) = LOWER(tags.name) WHERE LOWER(synonyms.synonym)=LOWER('$tag_name');"
     result=$(sql_fast "$SQL")
     if [ -n "$result" ]; then
-      log_info "Using synonym for '$tag_name' "
+      log_info "Using '$tag_name' as a synonym for the canonic '${result%%,*}' ."
     fi
   fi
   if [ -z "$result" ]; then
@@ -187,6 +189,33 @@ get_parent(){
   echo $parent;
 }
 
+# Get all child tags of a parent tag
+# Returns CSV list of child tag names
+# Usage: get_tag_children "ParentTag"
+# Returns: child1,child2,child3
+get_tag_children(){
+  local tag_input=$1
+
+  # Resolve parent tag to canonical name
+  local parent_name=$(get_tag_name "$tag_input")
+  if [[ -z "$parent_name" ]]; then
+    log_debug "Tag '$tag_input' not found, no children"
+    return 1
+  fi
+
+  # Get all children of this parent
+  SQL="SELECT name FROM tags WHERE parent='$parent_name' ORDER BY name;"
+  local result=$(sql_fast "$SQL")
+
+  if [[ -n "$result" ]]; then
+    log_debug "Found children of '$parent_name': $result"
+  else
+    log_debug "'$parent_name' has no children"
+  fi
+
+  echo "$result"
+}
+
 # Set parent relationship using tag names as foreign keys.
 # Parameters can be name, long_name, or synonym - will be resolved to name.
 set_parent(){
@@ -214,6 +243,196 @@ set_parent(){
   "
   sql_safe "$SQL"
   update_long_name_to_match_parent "$child_name"
+}
+
+# Transfer all children from one parent to another
+# Reparents all children recursively using set_parent
+# Usage: transfer_children SOURCE_PARENT DEST_PARENT
+transfer_children() {
+  local source_parent="$1"
+  local dest_parent="$2"
+
+  if [[ -z "$source_parent" || -z "$dest_parent" ]]; then
+    log_error "transfer_children: requires source and destination parent tags"
+    return 1
+  fi
+
+  local children=$(get_tag_children "$source_parent")
+  if [[ -z "$children" ]]; then
+    log_debug "No children to transfer from '$source_parent'"
+    return 0
+  fi
+
+  log_info "Transferring children from '$source_parent' to '$dest_parent'..."
+  IFS=',' read -ra children_array <<< "$children"
+  for child in "${children_array[@]}"; do
+    child=$(echo "$child" | xargs)
+    [[ -n "$child" ]] && set_parent "$child" "$dest_parent"
+  done
+}
+
+# Recursively delete all children of a parent tag
+# Usage: delete_child_tags PARENT_TAG
+delete_child_tags() {
+  local parent_tag="$1"
+
+  if [[ -z "$parent_tag" ]]; then
+    log_error "delete_child_tags: requires parent tag"
+    return 1
+  fi
+
+  local children=$(get_tag_children "$parent_tag")
+  if [[ -z "$children" ]]; then
+    log_debug "No children to delete for '$parent_tag'"
+    return 0
+  fi
+
+  log_info "Deleting all children of '$parent_tag'..."
+  IFS=',' read -ra children_array <<< "$children"
+  for child in "${children_array[@]}"; do
+    child=$(echo "$child" | xargs)
+    [[ -n "$child" ]] && delete_tag "$child" --recursive
+  done
+}
+
+# Orphan all children of a parent tag (set parent to NULL)
+# Usage: orphan_child_tags PARENT_TAG
+orphan_child_tags() {
+  local parent_tag="$1"
+
+  if [[ -z "$parent_tag" ]]; then
+    log_error "orphan_child_tags: requires parent tag"
+    return 1
+  fi
+
+  local children=$(get_tag_children "$parent_tag")
+  if [[ -z "$children" ]]; then
+    log_debug "No children to orphan for '$parent_tag'"
+    return 0
+  fi
+
+  log_info "Orphaning all children of '$parent_tag'..."
+  SQL="
+  PRAGMA foreign_keys = ON;
+  UPDATE tags SET parent = NULL WHERE parent='$parent_tag';
+  "
+  sql_safe "$SQL"
+}
+
+# Delete a tag from the database
+# Handles child tags based on --recursive or --orphan option
+# Usage: delete_tag TAG_NAME [--recursive|--orphan]
+#   --recursive: Delete the tag and all its children recursively (default behavior)
+#   --orphan: Delete the tag but set children's parent to NULL (keep orphaned tags)
+#
+# Returns:
+#   0 on success
+#   1 if tag not found or error during deletion
+#
+delete_tag() {
+  local tag_input="$1"
+  local child_mode="${2:-recursive}"  # default to recursive if not specified
+
+  if [[ -z "$tag_input" ]]; then
+    log_error "delete_tag: tag name required"
+    return 1
+  fi
+
+  # Validate child_mode
+  if [[ "$child_mode" != "recursive" && "$child_mode" != "orphan" ]]; then
+    log_error "delete_tag: invalid mode '$child_mode' (use --recursive or --orphan)"
+    return 1
+  fi
+
+  # Resolve tag to canonical name
+  local tag_name=$(get_tag_name "$tag_input")
+  if [[ -z "$tag_name" ]]; then
+    log_error "delete_tag: tag '$tag_input' not found in database"
+    return 1
+  fi
+
+  log_notice "Deleting tag '$tag_name' (mode: $child_mode)"
+
+  # Handle children based on mode
+  if [[ "$child_mode" == "recursive" ]]; then
+    delete_child_tags "$tag_name"
+  elif [[ "$child_mode" == "orphan" ]]; then
+    orphan_child_tags "$tag_name"
+  fi
+
+  # Delete synonyms pointing to this tag
+  local SQL_del_synonyms="DELETE FROM synonyms WHERE canonic='$tag_name';"
+  sql_fast "$SQL_del_synonyms" > /dev/null 2>&1
+
+  # Delete the tag itself
+  local SQL_del_tag="PRAGMA foreign_keys = ON; DELETE FROM tags WHERE name='$tag_name';"
+  if sql_safe "$SQL_del_tag"; then
+    log_success "Tag '$tag_name' deleted successfully"
+    return 0
+  else
+    log_error "Failed to delete tag '$tag_name'"
+    return 1
+  fi
+}
+
+# Combine two tags by merging one into another
+# Redirects all references from secondary_tag to canonic_tag, then deletes secondary_tag
+# Usage: combine_tags SECONDARY_TAG CANONIC_TAG
+#
+# This function:
+#   1. Validates both tags exist
+#   2. Updates all tags that have secondary_tag as parent to use canonic_tag instead
+#   3. Deletes the secondary_tag from the database
+#   4. Cleans up synonyms for the deleted tag
+#
+# Returns:
+#   0 on success
+#   1 if either tag is not found or merge fails
+#
+combine_tags() {
+  local secondary_input="$1"
+  local canonic_input="$2"
+
+  if [[ -z "$secondary_input" || -z "$canonic_input" ]]; then
+    log_error "combine_tags: requires two tag names (secondary_tag canonic_tag)"
+    return 1
+  fi
+
+  # Resolve both tags to canonical names
+  local secondary_tag=$(get_tag_name "$secondary_input")
+  if [[ -z "$secondary_tag" ]]; then
+    log_error "combine_tags: secondary tag '$secondary_input' not found"
+    return 1
+  fi
+
+  local canonic_tag=$(get_tag_name "$canonic_input")
+  if [[ -z "$canonic_tag" ]]; then
+    log_error "combine_tags: canonic tag '$canonic_input' not found"
+    return 1
+  fi
+
+  if [[ "$secondary_tag" == "$canonic_tag" ]]; then
+    log_error "combine_tags: tags are the same, nothing to combine"
+    return 1
+  fi
+
+  log_notice "Combining tag '$secondary_tag' into '$canonic_tag'..."
+
+  # Transfer children from secondary to canonic tag
+  transfer_children "$secondary_tag" "$canonic_tag"
+
+  # Transfer synonyms from secondary_tag to canonic_tag
+  SQL="UPDATE synonyms SET canonic='$canonic_tag' WHERE canonic='$secondary_tag';"
+  sql_fast "$SQL" > /dev/null 2>&1
+
+  # Delete the secondary tag (all children already reparented)
+  if delete_tag "$secondary_tag"; then
+    log_success "Successfully combined '$secondary_tag' into '$canonic_tag'"
+    return 0
+  else
+    log_error "Failed to delete secondary tag '$secondary_tag'"
+    return 1
+  fi
 }
 
 # Adds a synonym to a tag. Avoids duplicates.
@@ -337,7 +556,7 @@ dump_tags(){
   root_tags=$(sql_fast "$SQL")
 
   # Process each root tag
-  echo "$root_tags" | while IFS="$DB_DELIMITER" read -r tag_name long_name; do
+  while IFS="$DB_DELIMITER" read -r tag_name long_name <<< "$root_tags"; do
     # Display the root tag
     if [ "$tag_type" = "container" ]; then
       printf "\033[90m%s\033[0m\n" "$tag_name [root]"
@@ -403,7 +622,7 @@ display_child_tags(){
   child_tags=$(sql_fast "$SQL")
   # Process each child tag
   if [ -n "$child_tags" ]; then
-    echo "$child_tags" | while IFS="$DB_DELIMITER" read -r tag_name long_name tag_type; do
+    while IFS="$DB_DELIMITER" read -r tag_name long_name tag_type <<< "$child_tags"; do
       # Display the child tag with indentation
       if [ "$tag_type" = "container" ]; then
         printf "${indent}\033[90m%s\033[0m\n" "$tag_name"

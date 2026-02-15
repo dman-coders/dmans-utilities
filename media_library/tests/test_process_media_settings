@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 
+TEST_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export MEDIA_DB="$(realpath $(dirname "${BASH_SOURCE[0]}")/test.sqlite)"
+source "$TEST_SCRIPT_DIR/../process_media.lib"
 
-source process_media.lib
-
-log_notice "Data directory is $UTIL_DIR"
-log_notice $(ls "$UTIL_DIR" )
 log_debug "Media DB is $MEDIA_DB"
 
 # Test with existing tag and synonym
