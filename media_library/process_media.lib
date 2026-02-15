@@ -452,8 +452,12 @@ set_synonym(){
     return 1
   fi
 
-  # Ensure the canonic tag exists before setting the synonym
-  ensure_tag_exists "$canonic"
+  # Normalize synonym to canonical form if it's already a synonym
+  local canonical_synonym=$(get_tag_name "$synonym" 2>/dev/null)
+  if [[ -n "$canonical_synonym" ]]; then
+    # It's an existing synonym/tag, use its canonical form
+    synonym="$canonical_synonym"
+  fi
 
   # Check if the synonym already exists
   SQL="SELECT synonym FROM synonyms WHERE synonym='$synonym';"
@@ -593,7 +597,7 @@ display_synonyms(){
     return 0
   fi
 
-  # Get all synonyms for this tag
+  # Get all synonyms for this tag (tag_name is already canonical)
   SQL="SELECT synonym FROM synonyms WHERE canonic='$tag_name' ORDER BY synonym;"
   synonyms=$(sql_fast "$SQL")
 
@@ -611,32 +615,35 @@ display_child_tags(){
   local parent_tag="$1"
   local indent="$2"
 
-  # Resolve parent_tag to canonical name (parent column stores names)
-  local parent_name=$(get_tag_name "$parent_tag")
-  if [[ -z "$parent_name" ]]; then
+  # Get all child tag names using abstraction layer
+  local child_names=$(get_tag_children "$parent_tag")
+  if [[ -z "$child_names" ]]; then
     return 0
   fi
 
-  # Get all child tags for this parent
-  SQL="SELECT name, long_name, type FROM tags WHERE parent='$parent_name' ORDER BY name;"
-  child_tags=$(sql_fast "$SQL")
-  # Process each child tag
-  if [ -n "$child_tags" ]; then
-    while IFS="$DB_DELIMITER" read -r tag_name long_name tag_type <<< "$child_tags"; do
-      # Display the child tag with indentation
-      if [ "$tag_type" = "container" ]; then
-        printf "${indent}\033[90m%s\033[0m\n" "$tag_name"
-      else
-        printf "${indent}%s\n" "$tag_name"
-      fi
+  # Process each child tag name
+  IFS=',' read -ra children_array <<< "$child_names"
+  for tag_name in "${children_array[@]}"; do
+    tag_name=$(echo "$tag_name" | xargs)  # Trim whitespace
+    [[ -z "$tag_name" ]] && continue
 
-      # Display synonyms for this child tag
-      display_synonyms "$long_name" "${indent}  "
+    # Fetch full tag data for display
+    local tag_data=$(get_tag_data "$tag_name")
+    IFS="${DB_DELIMITER}" read -r tag_name long_name tag_type parent <<< "$tag_data"
 
-      # Recursively display this child's children (pass name for FK lookup)
-      display_child_tags "$tag_name" "${indent}${indent}"
-    done
-  fi
+    # Display the child tag with indentation
+    if [ "$tag_type" = "container" ]; then
+      printf "${indent}\033[90m%s\033[0m\n" "$tag_name"
+    else
+      printf "${indent}%s\n" "$tag_name"
+    fi
+
+    # Display synonyms for this child tag
+    display_synonyms "$long_name" "${indent}  "
+
+    # Recursively display this child's children
+    display_child_tags "$tag_name" "${indent}${indent}"
+  done
 }
 
 # Parallel file processing utility
