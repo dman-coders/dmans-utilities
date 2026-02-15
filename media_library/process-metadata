@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 
-MEDIA_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SCRIPT_DIR="$(dirname $MEDIA_LIB_DIR)"
-source "${MEDIA_LIB_DIR}/process_media.lib"
-
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/"
+source "${SCRIPT_DIR}process_media.lib"
+#source "$(dirname "$0")/process_media.lib"
 
 # Serialize provenance of a file into portable embedded metadata.
 

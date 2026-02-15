@@ -1,12 +1,9 @@
 #!/usr/bin/env bash
 
-MEDIALIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SCRIPT_DIR=$(dirname $MEDIALIB_DIR)
-echo $SCRIPT_DIR
-echo "$SCRIPT_DIR/Jellyfin/jellyfin-utils.lib"
-source "$SCRIPT_DIR/feedback.lib"
-source "$MEDIALIB_DIR/process_media.lib"
-source "$SCRIPT_DIR/Jellyfin/jellyfin-utils.lib"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/process_media.lib"
+source "$SCRIPT_DIR/../Jellyfin/jellyfin-utils.lib"
+source "$SCRIPT_DIR/../feedback.lib"
 
 # Usage and help
 usage() {
@@ -86,7 +83,6 @@ log_notice "Resolving file path for item: $ITEM_ID"
 local_path=$(jellyfin_item_local_path "$ITEM_ID")
 if [[ $? -ne 0 || -z "$local_path" ]]; then
     log_error "Could not resolve path for item $ITEM_ID"
-    jf TestConnection
     exit 1
 fi
 

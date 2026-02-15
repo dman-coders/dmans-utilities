@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 
-MEDIA_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SCRIPT_DIR="$(dirname $MEDIA_LIB_DIR)"
-source "${MEDIA_LIB_DIR}/process_media.lib"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/"
+source "${SCRIPT_DIR}process_media.lib"
 
 # Some webp images are actually jpegs, and need to be renamed so things are less confusing
 

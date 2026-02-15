@@ -6,8 +6,7 @@
       "Bash(curl:*)",
       "Bash(bash:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)",
-      "Bash(sqlite3:*)"
+      "Bash(git commit:*)"
     ]
   }
 }

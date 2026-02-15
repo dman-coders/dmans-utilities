@@ -4,10 +4,9 @@
 # Consolidated script library for all Jellyfin API operations
 # Usage: JellyFin <command> [arguments]
 
-JELLYFIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SCRIPT_DIR=$(dirname $JELLYFIN_DIR)
-source "$SCRIPT_DIR/feedback.lib"
-source "$JELLYFIN_DIR/jellyfin-utils.lib"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../feedback.lib"
+source "$SCRIPT_DIR/jellyfin-utils.lib"
 
 # ============================================================================
 # COMMAND FUNCTIONS
@@ -23,7 +22,7 @@ TestConnection() {
     log_debug "Server: ${JELLYFIN_API_URL}"
 
     curl -v -H "Authorization: MediaBrowser Token=\"$JELLYFIN_API_KEY\"" \
-        "${JELLYFIN_API_URL}/" 2>&1 | grep -E "^< HTTP|^\* Connected"
+        "${JELLYFIN_API_URL}/" 2>&1 | grep -E "^< HTTP|^* Connected"
 
     jellyfin_request GET "/System/Info"
 

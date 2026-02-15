@@ -1,7 +1,6 @@
 # Things to try with Jellyfin API:
-JELLYFIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$JELLYFIN_DIR/jellyfin-utils.lib"
-
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/jellyfin-utils.lib"
 
 # List the collections
 jf ListCollections
