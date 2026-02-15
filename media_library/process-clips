@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
-#source "$(dirname "$0")/process_media.lib"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/"
-source "${SCRIPT_DIR}process_media.lib"
+MEDIA_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(dirname $MEDIA_LIB_DIR)"
+source "${MEDIA_LIB_DIR}/process_media.lib"
 
 # Do a lot of steps to tag, sort, and catalog webp images.
 

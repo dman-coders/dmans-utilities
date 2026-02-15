@@ -8,12 +8,9 @@ mkdir -p "$MEDIA_LIB_DIR"
 MEDIA_DB="${MEDIA_DB:-${MEDIA_LIB_DIR}/media.sqlite}"
 
 # Source SQLite database management functions
-LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$LIB_DIR/sqlite.lib"
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/"
-source "${SCRIPT_DIR}sqlite.lib"
-source "${SCRIPT_DIR}../feedback.lib"
+[[ $SCRIPT_DIR ]] || SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "${SCRIPT_DIR}/sqlite.lib"
+source "${SCRIPT_DIR}/feedback.lib"
 
 
 # Check if a tag exists in the database, and create it if not
@@ -208,12 +205,14 @@ get_tag_children(){
   local result=$(sql_fast "$SQL")
 
   if [[ -n "$result" ]]; then
-    log_debug "Found children of '$parent_name': $result"
+    # Convert newline-separated results to comma-separated CSV format
+    local csv=$(echo "$result" | tr '\n' ',' | sed 's/,$//')
+    log_debug "Found children of '$parent_name' ($tag_input): $csv"
+    echo "$csv"
   else
     log_debug "'$parent_name' has no children"
+    return 1
   fi
-
-  echo "$result"
 }
 
 # Set parent relationship using tag names as foreign keys.
@@ -557,10 +556,9 @@ update_tag_hierarchy(){
 dump_tags(){
   # First, get all root tags (tags with no parent)
   SQL="SELECT name, long_name FROM tags WHERE parent IS NULL OR parent = '' ORDER BY name;"
-  root_tags=$(sql_fast "$SQL")
 
-  # Process each root tag
-  while IFS="$DB_DELIMITER" read -r tag_name long_name <<< "$root_tags"; do
+  # Process each root tag using a pipe (more reliable than heredoc with while loop)
+  echo "$SQL" | sqlite3 -separator "$DB_DELIMITER" "$MEDIA_DB" | while IFS="$DB_DELIMITER" read -r tag_name long_name; do
     # Display the root tag
     if [ "$tag_type" = "container" ]; then
       printf "\033[90m%s\033[0m\n" "$tag_name [root]"
@@ -622,6 +620,8 @@ display_child_tags(){
   fi
 
   # Process each child tag name
+  local children_array;
+  local tag_name;
   IFS=',' read -ra children_array <<< "$child_names"
   for tag_name in "${children_array[@]}"; do
     tag_name=$(echo "$tag_name" | xargs)  # Trim whitespace
@@ -629,20 +629,20 @@ display_child_tags(){
 
     # Fetch full tag data for display
     local tag_data=$(get_tag_data "$tag_name")
-    IFS="${DB_DELIMITER}" read -r tag_name long_name tag_type parent <<< "$tag_data"
+    IFS="${DB_DELIMITER}" read -r canonic_name long_name tag_type parent <<< "$tag_data"
 
     # Display the child tag with indentation
     if [ "$tag_type" = "container" ]; then
-      printf "${indent}\033[90m%s\033[0m\n" "$tag_name"
+      printf "${indent}\033[90m%s\033[0m\n" "$canonic_name"
     else
-      printf "${indent}%s\n" "$tag_name"
+      printf "${indent}%s\n" "$canonic_name"
     fi
 
     # Display synonyms for this child tag
     display_synonyms "$long_name" "${indent}  "
 
     # Recursively display this child's children
-    display_child_tags "$tag_name" "${indent}${indent}"
+    display_child_tags "$canonic_name" "${indent}${indent}"
   done
 }
 

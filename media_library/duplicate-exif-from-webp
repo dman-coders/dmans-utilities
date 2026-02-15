@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 
-source "$(dirname "$0")/process_media.lib"
+MEDIA_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(dirname $MEDIA_LIB_DIR)"
+source "${MEDIA_LIB_DIR}/process_media.lib"
 
 # Given a file, list of files, or directory, including images,
 # Process them all by:
