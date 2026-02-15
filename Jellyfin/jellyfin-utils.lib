@@ -91,8 +91,8 @@ jellyfin_request() {
         if [ -n "$data" ]; then
             curl_cmd="curl -s -w \"\\n%{http_code}\" -X $method -H \"Authorization: MediaBrowser Token=\\\"$JELLYFIN_API_KEY\\\"\" -H \"Content-Type: application/json\" -d '$data' \"$url\""
             log_debug "API Request: $method $endpoint"
-            log_debug "  Body: $data"
-            log_debug "  Command: $curl_cmd"
+            # log_debug "  Body: $data"
+            log_trace "  Command: $curl_cmd"
             response=$(curl -s -w "\n%{http_code}" -X "$method" \
                 -H "Authorization: MediaBrowser Token=\"$JELLYFIN_API_KEY\"" \
                 -H "Content-Type: application/json" -d "$data" \

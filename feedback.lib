@@ -25,6 +25,9 @@ log_notice(){
 log_debug(){
   printf "${DEBUG_COLOR}%s${COLOR_RESET}\n" "$1" >&2
 }
+log_trace(){
+  [[ 1 ]] || printf "${DEBUG_COLOR}%s${COLOR_RESET}\n" "$1" >&2
+}
 log_info(){
   printf "${INFO_COLOR}%s${COLOR_RESET}\n" "$1" >&2
 }

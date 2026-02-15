@@ -529,7 +529,7 @@ GetItemImageUrl() {
     if [ -z "$IMAGE_TAG" ]; then
         log_debug "Fetching image tag for item: $ITEM_ID"
 
-        local item_response=$(GetItem "$ITEM_ID" --fields ImageTags 2>/dev/null)
+        local item_response=$(GetItem "$ITEM_ID" --fields ImageTags)
 
         if [ $? -ne 0 ]; then
             log_error "Failed to retrieve item image tags"
@@ -537,7 +537,7 @@ GetItemImageUrl() {
         fi
 
         # Extract the tag for the specified image type
-        IMAGE_TAG=$(echo "$item_response" | jq -r ".ImageTags.\"$IMAGE_TYPE\"" 2>/dev/null)
+        IMAGE_TAG=$(echo "$item_response" | jq -r ".ImageTags.\"$IMAGE_TYPE\"" )
 
         if [ -z "$IMAGE_TAG" ] || [ "$IMAGE_TAG" = "null" ]; then
             log_error "Item does not have a $IMAGE_TYPE image tag"
@@ -643,26 +643,35 @@ UpdateItem() {
         return 1
     fi
 
-    log_notice "Updating item: $ITEM_ID"
-    log_debug "Patch payload: $PATCH_PAYLOAD"
+    #log_notice "Updating item: $ITEM_ID"
+    #log_debug "Patch payload: $PATCH_PAYLOAD"
 
     # Jellyfin API requires complete item object, not just patch
     # So we must: GET current item -> merge patch -> POST complete object
 
     # Step 1: Get current item
-    log_debug "Fetching current item state"
-    local current_item_raw=$(GetItem "$ITEM_ID" --output raw 2>&1 | tail -1)
+    log_debug "Fetching current item state : id $ITEM_ID"
+    local current_item_raw=$(GetItem "$ITEM_ID" --output raw | tail -1)
     if [ -z "$current_item_raw" ]; then
         log_error "Failed to fetch current item state"
+        return 1
+    fi
+
+    # Validate we got JSON, not an error message
+    if ! echo "$current_item_raw" | jq empty > /dev/null 2>&1; then
+        log_error "GetItem returned invalid JSON (item fetch failed)"
+        log_error "Response was: $current_item_raw"
         return 1
     fi
 
     # Step 2: Merge patch into current item
     log_debug "Merging patch into item"
     local merged_payload
-    merged_payload=$(echo "$current_item_raw" | jq ". * $PATCH_PAYLOAD" 2>/dev/null)
+    merged_payload=$(echo "$current_item_raw" | jq ". * $PATCH_PAYLOAD")
     if [ -z "$merged_payload" ]; then
-        log_error "Failed to merge patch payload"
+        log_error "jq Failed to merge patch payload"
+        log_error "Current item: $current_item_raw"
+        log_error "Patch payload: $PATCH_PAYLOAD"
         return 1
     fi
 
@@ -958,7 +967,7 @@ FindItemCollections() {
 
     # For each collection, check if item is a member
     echo "$COLLECTIONS" | jq -r '.[] | .Id' | while read COLL_ID; do
-        local MATCH=$(Items --parent-id "$COLL_ID" --fields Id 2>/dev/null | \
+        local MATCH=$(Items --parent-id "$COLL_ID" --fields Id | \
                 jq --arg itemid "$ITEM_ID" 'map(select(.Id == $itemid)) | length')
 
         if [ "$MATCH" == "1" ]; then
@@ -1011,7 +1020,7 @@ UpdateTags() {
 
         # Fetch current tags via GetItem, suppress logging
         local CURRENT=$(GetItem "$ITEM_ID" --fields Tags 2>&1 | jq -R 'select(startswith("{")) | fromjson?' 2>/dev/null | jq -s '.[0]' 2>/dev/null)
-        local EXISTING_TAGS=$(echo "$CURRENT" | jq '.Tags // []' 2>/dev/null)
+        local EXISTING_TAGS=$(echo "$CURRENT" | jq '.Tags // []' )
 
         # Merge new tags with existing
         local NEW_TAGS=()
@@ -1058,7 +1067,8 @@ UpdateTags() {
 
     # Update the item via UpdateItem function
     log_debug "UpdateItem $ITEM_ID \"$PAYLOAD\" "
-    local RESULT=$(UpdateItem "$ITEM_ID" "$PAYLOAD" 2>/dev/null)
+    local RESULT=$(UpdateItem "$ITEM_ID" "$PAYLOAD" 2| log_error)
+    # log_debug "$RESULT"
 
     if [ $? -eq 0 ]; then
         # Extract and display just the Tags from the result
