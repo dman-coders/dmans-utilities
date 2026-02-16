@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+
+
+# Given a single file,
+# create a symlink to it in a commn staging location.
+# Used for prototyping data and metadata scans.
+
+STAGING_ARCHIVE_PATH=${STAGING_ARCHIVE_PATH:-/data/staging/}
+# Ensure the archive path is available
+if [ ! -d "$STAGING_ARCHIVE_PATH" ]; then
+  echo "Archive path unavailable. Cannot move file. set STAGING_ARCHIVE_PATH=$STAGING_ARCHIVE_PATH to somewhere else that exists and is writable" >&2
+  exit 1
+fi
+
+
+source_file=$(realpath "$1")
+
+# Check if the source file exists
+if [ ! -f "$source_file" ]; then
+  echo "Source file not found: $source_file" >&2
+  exit 1
+fi
+target_file="$STAGING_ARCHIVE_PATH/$(basename "$source_file")"
+
+ln -s "$source_file" "target_file"
+
+echo "linked $source_file to $target_file"   >&2
+
