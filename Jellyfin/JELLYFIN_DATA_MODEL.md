@@ -176,11 +176,13 @@ Folders containing photos. Albums:
 - Track `ChildCount` and `RecursiveItemCount`
 - may be added to collections (BoxSets)
 - May be a child of a `Folder`
+- Items may only belong to one 'Album' at a time?
 
 ### BoxSet (Collection)
 User-created collections of videos. BoxSets:
 - Group related videos together
-- Stored in `/var/lib/jellyfin/data/collections/`
+- Stored in `/var/lib/jellyfin/data/collections/${BOXSET_NAME}`
+  - this contains an XML manifest but little metadata
 - A BoxSet is a child of a 'Folder'
 - Belong to the Collection `Folder` called 'collections'
 - Videos can be in multiple BoxSets **simultaneously** (critical for multi-tagging)
@@ -198,6 +200,12 @@ User-created collections of videos. BoxSets:
 - The API recognizes when ParentId is a BoxSet and returns member items (not folder children)
 - It is possible to add a Collection to another Collection.
   - a Nested Item will have `"IsFolder": true, "Type": "BoxSet",`
+
+### Playlists
+
+Seem to be similar to Collections.
+Many properties behave the same as BoxSets, but they are a separate entity type. 
+
 
 ### Tag
 Simple string labels attached to items. Tags:

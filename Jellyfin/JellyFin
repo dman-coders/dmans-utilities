@@ -607,7 +607,7 @@ GetItemLocalPath() {
     fi
 }
 
-# GetItemByPath - Get Jellyfin item by filesystem path
+# GetItemByPath - Get Jellyfin item by filesystem path on the server
 #
 # Wrapper around: GET /Items (client-side path filtering)
 # OperationId: GetItems
@@ -652,6 +652,17 @@ GetItemByPath() {
 
     # Output the item as JSON
     echo "$ITEM" | jq '.'
+}
+
+# Given a local path that's configured to be mapped to the server data folder, find the corresponding Jellyfin item.
+GetItemByLocalPath() {
+  local LOCAL_PATH="$1";
+  local REMOTE_PATH=$(jellyfin_remote_path "$LOCAL_PATH");
+  if [[ -z "$REMOTE_PATH" ]]; then
+    log_error "Failed to map local path to remote path"
+    return 1
+  fi
+  echo $(GetItemByPath "$REMOTE_PATH");
 }
 
 # UpdateItem - Update a Jellyfin item (general purpose item update)

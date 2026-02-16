@@ -195,14 +195,15 @@ jellyfin_item_local_path() {
 }
 
 # Map local path to remote path
+# transforms the configured local data folder back to the root data folder path that Jellyfin expects.
 # Usage: jellyfin_remote_path <local-path>
 jellyfin_remote_path() {
-    local local_path="$1"
-    if [ -n "$JELLYFIN_ROOT_DATA_FOLDER" ] && [ -n "$JELLYFIN_LOCAL_DATA_FOLDER" ]; then
-        echo "${local_path/#$JELLYFIN_LOCAL_DATA_FOLDER/$JELLYFIN_ROOT_DATA_FOLDER}"
-    else
-        echo "$local_path"
-    fi
+  local local_path="$1"
+  if [ -n "$JELLYFIN_ROOT_DATA_FOLDER" ] && [ -n "$JELLYFIN_LOCAL_DATA_FOLDER" ]; then
+    echo "${local_path/#$JELLYFIN_LOCAL_DATA_FOLDER/$JELLYFIN_ROOT_DATA_FOLDER}"
+  else
+    return 1;
+  fi
 }
 
 # ============================================================================

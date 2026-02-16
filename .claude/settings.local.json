@@ -74,7 +74,8 @@
       "WebFetch(domain:docs.jellyfin.org)",
       "WebFetch(domain:jellyfin.org)",
       "WebSearch",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:docs.stashapp.cc)"
     ],
     "deny": [],
     "ask": []

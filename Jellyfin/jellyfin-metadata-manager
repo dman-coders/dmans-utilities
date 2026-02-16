@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# https://github.com/CesarBianchi/JellyfinEasyMetadataManager?tab=readme-ov-file
+
+JELLYFIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$JELLYFIN_DIR/.env"
+
+echo "URL: $JELLYFIN_URL"
+echo "KEY: $JELLYFIN_API_KEY"
+java -jar ~/bin/jemm_runnable-jar-with-dependencies.jar
