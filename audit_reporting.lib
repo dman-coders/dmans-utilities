@@ -44,7 +44,7 @@ EOF
 
 audit_reporting_verify_schema_exists() {
   if ! sqlite3 "$AUDIT_DB" "SELECT name FROM sqlite_master WHERE type='table' AND name='checks';" | grep -q 'checks'; then
-    log_debug "Audit database schema not found, initializing..."
+    log_debug "AUDIT: Audit database schema not found, initializing..."
     audit_reporting_init_schema
   fi
 }
@@ -103,19 +103,19 @@ audit_report_result() {
   audit_reporting_set_check "$project" "$check_group" "$check_id" "$check_status" "$data" "$note"
   # Add feedback here, saves duplicating it in the checks.
   if [[ "$check_status" == "$STATUS_OK" ]]; then
-    log_info "Recording Check result: $check_id; $check_status; ($data) "
+    log_info "AUDIT: Recording Check result: $check_id; $check_status; ($data) "
   elif [[ "$check_status" == "$STATUS_WARNING" ]]; then
-    log_warning "Recording Check result: $check_id; $check_status; ($data) "
+    log_warning "AUDIT: Recording Check result: $check_id; $check_status; ($data) "
   elif [[ "$check_status" == "$STATUS_ERROR" ]]; then
-    log_error "Recording Check: result $check_id; $check_status; ($data) "
+    log_error "AUDIT: Recording Check: result $check_id; $check_status; ($data) "
   else
-    log_debug "Recording Check result: $check_id; $check_status; ($data) "
+    log_debug "AUDIT: Recording Check result: $check_id; $check_status; ($data) "
   fi
 }
 
 audit_summarize_project() {
   local project="${1:-$PLATFORM_PROJECT}"
-  log_debug "${FUNCNAME[0]}) $project"
+  log_debug "AUDIT: ${FUNCNAME[0]}) $project"
   sqlite3 -header -column "$AUDIT_DB" <<EOF
 SELECT check_group, check_id, status, data, note, timestamp
 FROM checks
