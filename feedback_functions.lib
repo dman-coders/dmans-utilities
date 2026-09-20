@@ -3,6 +3,8 @@
 # Trivial slightly-formatted print wrappers.
 # For these to be useful, this lib should be included by source-ing it.
 # source "$(dirname "$(readlink -f "$0")")/feedback_functions.lib"
+# or if it's in the $PATH
+# source "$(type -P feedback_functions.lib)"
 
 PLATFORM_CLI=${PLATFORM_CLI:-upsun}
 
@@ -233,7 +235,7 @@ check_required_parameters_are_set() {
       log_info "${COLOR_BRIGHT_WHITE} export ${varname}=${value} ${COLOR_RESET} "
     fi
   done
-  log_info 'REQUIRED_PARAMETERS seem valid'
+  log_debug 'REQUIRED_PARAMETERS seem valid'
   return 0
 }
 

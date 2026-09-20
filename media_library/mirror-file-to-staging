@@ -5,7 +5,7 @@
 # create a symlink to it in a commn staging location.
 # Used for prototyping data and metadata scans.
 
-STAGING_ARCHIVE_PATH=${STAGING_ARCHIVE_PATH:-/data/staging/}
+STAGING_ARCHIVE_PATH=${STAGING_ARCHIVE_PATH:-/data/staging}
 # Ensure the archive path is available
 if [ ! -d "$STAGING_ARCHIVE_PATH" ]; then
   echo "Archive path unavailable. Cannot move file. set STAGING_ARCHIVE_PATH=$STAGING_ARCHIVE_PATH to somewhere else that exists and is writable" >&2

@@ -61,3 +61,32 @@ Prepare the systemd daemon service so it will stop/start as that user
 
 `Status` should show `stash is running at http://localhost:9999/`
 
+---
+
+Debugging stash plugin.
+
+Embedded metadata required python dependencies.
+
+Installed python locally to the stash user, and then installed the dependencies with pip.
+Being careful to use the slash user for most things.
+
+```
+sudo apt install python3 python3-venv python3-pip
+sudo -u stash python3 -m venv /var/lib/stash/venv
+sudo -u stash /var/lib/stash/venv/bin/pip install --upgrade pip
+sudo -u stash /var/lib/stash/venv/bin/pip install pyexiv2 pyexiftool 
+```
+
+Then attempt to invoke the metadata scraper directly.
+
+```
+sudo -u stash -s /bin/bash
+PYTHON=/var/lib/stash/venv/bin/python
+export PYTHONPATH=/var/lib/stash/scrapers/community/py_common:$PYTHONPATH;
+PY_SCRIPT=/var/lib/stash/scrapers/community/EmbeddedMetadata/embedded-metadata.py
+IMAGE_PATH=/data/X/prototype_library/24530128.gif
+
+cd /var/lib/stash/scrapers/community/EmbeddedMetadata/ 
+$PYTHON $PY_SCRIPT "$IMAGE_PATH"
+```
+
