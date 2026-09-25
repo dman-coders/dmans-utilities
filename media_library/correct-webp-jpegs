@@ -11,10 +11,12 @@ source "${SCRIPT_DIR}process_media.lib"
 # verify it's really a webp
 # if it's actually a jpeg, rename/convert it to reflect that.
 
-# IF a change is made, it will output the replacement filename
-# outputs notning if no change, so check the return carefully.
+# RETURN: IF a change is made, it will output the replacement filename
+#
+# Outputs nothing if no change, so check the return carefully.
 
 function processFile {
+    source "$(which feedback_functions.lib)" || { echo "feedback_functions.lib not found in PATH"; exit 1; }
 
     local exif_option="-quiet -overwrite_original"
     local source_file="$1"
@@ -23,31 +25,29 @@ function processFile {
     extension="${filename##*.}"
     filename="${filename%.*}"
 
-    echo "Validating $source_file is OK" >&2
-
-    if [[ ! -f "${source_file}" ]]; then
-      echo "Error: $source_file is not a file"
+     if [[ ! -f "${source_file}" ]]; then
+      log_error "Error: $source_file is not a file"
       return 1
     fi
     local image_size=$(exiftool -ImageSize "${source_file}")
     if [[ -z "$image_size" ]] ; then
-      echo "$source_file is not an image or video $image_size"  >&2
+      log_error "$source_file is not an image or video $image_size"  >&2
       return 1
     fi
 
     if [[ "$extension" != "webp" ]] ; then
       # Not a webp. continue.
-      echo "$filename is not a webp"  >&2
+      log_info "$filename is not a webp"  >&2
       return 1
     fi
-    echo "$filename is allegedly a webp"  >&2
+    log_info "$filename is allegedly a webp"  >&2
 
     local mime_type=$(exiftool -s -S -MimeType "${source_file}")
     if [[ "$mime_type" == "image/jpeg" ]] ; then
-      echo "$filename is actually a $mime_type" >&2
+      log_warning "$filename is actually a $mime_type" >&2
       # Rename it.
       new_name="$(dirname $source_file)/${filename}.jpg"
-      echo "Renaming it to $new_name" >&2
+      log_warning "Renaming it to $new_name" >&2
       mv "$source_file" "$new_name"
       # good news, this retains the OS metadata found by mdls.
       # Put the new derivative into stdout for a caller to work with.
@@ -55,7 +55,8 @@ function processFile {
       return 0
     fi
     # otherwise good.
-    return 0
+    log_success "Validating webp/jpeg $source_file is OK" >&2
+   return 0
 }
 
 # Call the processFiles function with the provided arguments

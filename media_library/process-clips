@@ -1,9 +1,5 @@
 #!/usr/bin/env bash
 
-#source "$(dirname "$0")/process_media.lib"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/"
-source "${SCRIPT_DIR}process_media.lib"
-
 # Do a lot of steps to tag, sort, and catalog webp images.
 
 # Given a file, list of files, or directory, including webp animated clips,
@@ -13,7 +9,12 @@ source "${SCRIPT_DIR}process_media.lib"
 # * duplicate the metadata from the webp into the gif, so the gif has a reference to the original
 # * archive the webp into a totally different place, giving it a filename derived from the cannonic UUID so that we can find it again later.
 
+source "$(which feedback_functions.lib)" || { echo "feedback_functions.lib not found in PATH"; exit 1; }
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/"
+source "${SCRIPT_DIR}process_media.lib"
+
 function processFile {
+    source "$(which feedback_functions.lib)" || { echo "feedback_functions.lib not found in PATH"; exit 1; }
 
     local pid=$$
     local identifier="[PID $pid]"
@@ -22,30 +23,31 @@ function processFile {
     local source_file="$1"
 
     if [[ ! -f "${source_file}" ]]; then
-        echo "$identifier Error: $source_file is not a file"
+        log_error "$identifier Error: $source_file is not a file"
         return 1
     fi
+    log_success "found file: $source_file"
 
     local mime_type=$(exiftool -s -S -MimeType "${source_file}")
-    echo "$identifier Processing $source_file ($mime_type)" >&2
+    log_notice "$identifier Processing $source_file ($mime_type)"
 
     # Correct for misleading mime type. Do this before all else.
     new_file=$( "${SCRIPT_DIR}correct-webp-jpegs" "${source_file}" )
 
     if [ ! -z "$new_file" ] &&  [ ! "$new_file" == "$source_file" ]; then
         # a change happened.
-        echo "new file after verification is '$new_file' " >&2
+        log_warning "New file after MIME verification is '$new_file' "
         source_file="$new_file"
         mime_type=$(exiftool -s -S -MimeType "${source_file}")
     fi
 
     if [[ "$mime_type" == "image/webp" ]] ; then
-      echo "$identifier Processing webp '$source_file'" >&2
+      log_notice "$identifier Processing webp '$source_file'"
 
       new_file=$(processWebpFile "${source_file}")
       if [ ! -z "$new_file" ] &&  [ ! "$new_file" == "$source_file" ]; then
         # a change happened.
-        echo "new file after verification is '$new_file' " >&2
+        log_warning "new file after verification is '$new_file' "
         # either a jpeg or gif derivative is what we should work on from ow on.
         source_file="$new_file"
         mime_type=$(exiftool -s -S -MimeType "${source_file}")
@@ -73,7 +75,7 @@ function processWebpFile {
     # Ensure its metadata is populated
     process-metadata "${source_file}"
     # Ensure it's got a corresponding gif
-    webp2gif "${source_file}" || echo "Failed to convert webp 2 gif" >&2
+    webp2gif "${source_file}" || log_error "Failed to convert webp 2 gif"
     local gif_version="${source_file%.*}.gif"
     if [[ -f "${gif_version}" ]]; then
       # Ensure the gif has a copy of the metadata
@@ -81,10 +83,10 @@ function processWebpFile {
       # Shift the webp into the archive.
       move-file-to-uuid-archive "${source_file}"
       # Return the new derivative for any caller to work with.
-      echo "${gif_version}"
+      log_info "${gif_version}"
       return 0
     else
-      echo "Failed to produce gif version of ${source_file}" >&2
+      log_error "Failed to produce gif version of ${source_file}"
       return 1
     fi
 }

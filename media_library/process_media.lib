@@ -7,8 +7,8 @@
 [[ $SCRIPT_DIR ]] || SCRIPT_DIR="$(dirname "$MEDIA_LIB_DIR")"
 
 # Source SQLite database management functions
-source "${SCRIPT_DIR}/sqlite.lib"
-source "${SCRIPT_DIR}/feedback.lib"
+source "$(which sqlite.lib)" || { echo "sqlite.lib not found in PATH"; exit 1; }
+source "$(which feedback_functions.lib)" || { echo "feedback_functions.lib not found in PATH"; exit 1; }
 
 MEDIA_DATA_DIR=${MEDIA_DATA_DIR:-~/.media_processing}
 mkdir -p "$MEDIA_DATA_DIR"
@@ -752,6 +752,9 @@ extract_exif_tags() {
 parallelProcessFiles() {
     export -f processFile;
     export SCRIPT_DIR;
+    # Running just this exported function in a subshell means
+    # there is very little context and probably no shared libraries available
+    # unless everything is exported.
     find "$@" -type f -print0 | xargs -0 -P 4 -I {} bash -c 'processFile "$1"' _ "{}"
 }
 

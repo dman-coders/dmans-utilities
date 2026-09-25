@@ -1,11 +1,18 @@
 #!/usr/bin/env bash
 
+# Given a Jellyfin media item ID
+# Find this resourses file location
+# Read a files exif metadata
+# Apply the metadata from the file into the Jellyfin DB
+
+
 MEDIA_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT_DIR="$(dirname $MEDIA_LIB_DIR)"
-echo " $MEDIA_LIB_DIR and $SCRIPT_DIR"
+# echo " $MEDIA_LIB_DIR and $SCRIPT_DIR"
 source "$MEDIA_LIB_DIR/process_media.lib"
 source "$SCRIPT_DIR/Jellyfin/jellyfin-utils.lib"
-source "$SCRIPT_DIR/feedback.lib"
+source "$(which feedback_functions.lib)" || { echo "feedback_functions.lib not found in PATH"; exit 1; }
+
 
 # Usage and help
 usage() {
@@ -84,7 +91,7 @@ fi
 log_notice "Resolving file path for item: $ITEM_ID"
 local_path=$(jellyfin_item_local_path "$ITEM_ID")
 if [[ $? -ne 0 || -z "$local_path" ]]; then
-    log_error "Could not resolve path for item $ITEM_ID"
+    log_error "Could not resolve jellyfin_item_local_path for item $ITEM_ID"
     exit 1
 fi
 
