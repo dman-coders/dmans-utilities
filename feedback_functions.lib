@@ -20,14 +20,14 @@ COLOR_BRIGHT_GREEN="\033[92m"
 COLOR_BRIGHT_BLUE="\033[94m"
 COLOR_BRIGHT_WHITE="\033[97m"
 
-LOGLEVEL_CRITICAL=1
-LOGLEVEL_SUCCESS=2
-LOGLEVEL_ERROR=3
-LOGLEVEL_WARNING=4
-LOGLEVEL_NOTICE=5
-LOGLEVEL_INFO=6
-LOGLEVEL_DEBUG=7
-LOGLEVEL_TRACE=8
+export LOGLEVEL_CRITICAL=1
+export LOGLEVEL_SUCCESS=2
+export LOGLEVEL_ERROR=3
+export LOGLEVEL_WARNING=4
+export LOGLEVEL_NOTICE=5
+export LOGLEVEL_INFO=6
+export LOGLEVEL_DEBUG=7
+export LOGLEVEL_TRACE=8
 
 export exit_code=0
 export exit_error=1
@@ -40,6 +40,7 @@ export ADD_LABEL_TO_MESSAGES=${ADD_LABEL_TO_MESSAGES:-""}
 # Generalized log function
 # Can accept input as either an arg or piped.
 log_message() {
+  # echo "log_message - $1 - $2" >&2
   local level=$1
   shift 1
   case "${level}" in
@@ -90,30 +91,31 @@ log_message() {
     prefix="${prefix}${COLOR_GRAY}# ($(basename "$0")) #${COLOR_RESET} "
   fi
 
-  if [[ ! -t 0 ]]; then
-    # Handle piped input - always consume stdin to prevent SIGPIPE
-    while IFS= read -r line; do
-      # shellcheck disable=SC2250
-      if [[ "${LOGLEVEL}" -ge "${level}" ]]; then
-        echo -e "$prefix ${color}$line${COLOR_RESET}" >&2
-      fi
-    done
-  else
-    # Handle inline arguments - only output if log level permits
+  if [[ $# -gt 0 ]]; then
+    # Normal case Arguments were passed - use them
     if [[ "${LOGLEVEL}" -ge "${level}" ]]; then
       echo -e "${prefix} ${color}$*${COLOR_RESET}" >&2
+    fi
+  else
+    # No arguments - try to read from stdin if available
+    if [[ ! -t 0 ]]; then
+      while IFS= read -r line; do
+        if [[ "${LOGLEVEL}" -ge "${level}" ]]; then
+          echo -e "$prefix ${color}$line${COLOR_RESET}" >&2
+        fi
+      done
     fi
   fi
 }
 
-log_trace() { log_message "${LOGLEVEL_TRACE}" "$*"; }
-log_debug() { log_message "${LOGLEVEL_DEBUG}" "$*"; }
-log_info() { log_message "${LOGLEVEL_INFO}" "$*"; }
-log_notice() { log_message "${LOGLEVEL_NOTICE}" "$*"; }
-log_warning() { log_message "${LOGLEVEL_WARNING}" "$*"; }
-log_success() { log_message "${LOGLEVEL_SUCCESS}" "$*"; }
-log_error() { log_message "${LOGLEVEL_ERROR}" "$*"; }
-log_critical() { log_message "${LOGLEVEL_CRITICAL}" "$*"; }
+log_trace() { log_message "${LOGLEVEL_TRACE}" "🧐  $*"; }
+log_debug() { log_message "${LOGLEVEL_DEBUG}" "🐛  $*"; }
+log_info() { log_message "${LOGLEVEL_INFO}"   "ℹ️  $*"; }
+log_notice() { log_message "${LOGLEVEL_NOTICE}" "🪧  $*"; }
+log_warning() { log_message "${LOGLEVEL_WARNING}" "⚠️  $*"; }
+log_success() { log_message "${LOGLEVEL_SUCCESS}" " ✅  $*"; }
+log_error() { log_message "${LOGLEVEL_ERROR}" "❌  $*"; }
+log_critical() { log_message "${LOGLEVEL_CRITICAL}" "☠️  $*"; }
 
 print_log() {
   # Old alias, deprecate.
@@ -131,6 +133,26 @@ log_indent() {
 log_function_call() {
   echo -e ">  \033[0;97;46m${FUNCNAME[1]} \033[0;94;46m$*\033[0m" >&2
 }
+
+log_call_stack() {
+  echo "Call stack:"
+  for ((i=1; i < ${#FUNCNAME[@]}; i++)); do
+    echo "  ${FUNCNAME[i]} at ${BASH_SOURCE[i]}:${BASH_LINENO[i-1]}"
+  done
+}
+
+log_section() {
+  echo "" >&2
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" >&2
+  echo "▶ $1" >&2
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" >&2
+}
+
+log_subsection() {
+  echo "" >&2
+  echo "  ▸ $1" >&2
+}
+
 
 indent() {
   local prefix="    "
@@ -245,7 +267,7 @@ get_project_id_from_context() {
 
 # Make these util funcs available to the sub processes.
 export -f log_message run_command >/dev/null 2>&1
-export -f log_debug log_info log_notice log_warning log_error log_indent >/dev/null 2>&1
+export -f log_trace log_debug log_info log_notice log_warning  log_success log_error log_critical log_indent log_call_stack >/dev/null 2>&1
 
 test_feedback_functions() {
   # Define semantic labels for colors
