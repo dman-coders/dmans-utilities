@@ -4,9 +4,9 @@
 # Consolidated script library for all Jellyfin API operations
 # Usage: JellyFin <command> [arguments]
 
-JELLYFIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-#SCRIPT_DIR=$(dirname $JELLYFIN_DIR)
-#source "$SCRIPT_DIR/feedback.lib"
+JELLYFIN_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
+#JELLYFIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+source "$(which feedback_functions.lib)"
 source "$JELLYFIN_DIR/jellyfin-utils.lib"
 
 # ============================================================================
@@ -46,7 +46,7 @@ TestConnection() {
 # Usage: SystemInfo
 #
 SystemInfo() {
-    eval curl -s $JELLYFIN_CURL_OPTIONS \
+    eval "curl -s $JELLYFIN_CURL_OPTIONS" \
          "${JELLYFIN_API_URL}/System/Info" \
          | jq
 }

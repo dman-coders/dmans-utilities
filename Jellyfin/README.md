@@ -17,6 +17,31 @@ cd Jellyfin
 
 Refer to `test.sh` for the current test scenarios and to understand the integration testing approach. The test suite will evolve as new utility scripts are implemented.
 
+### Oriantation
+#### investigate a single file.
+
+Get started.
+Include the .env file which declares 
+
+    JELLYFIN_ROOT_DATA_FOLDER=/mnt/raid1/X/
+    JELLYFIN_LOCAL_DATA_FOLDER=/Volumes/x-files/
+
+Get the functions easy and local for CLI work
+
+    source "$(which feedback_functions.lib)" 
+    source jellyfin-utils.lib
+
+Go find a file
+
+    ls $JELLYFIN_LOCAL_DATA_FOLDER
+
+    RELATIVE_PATH='HOWTO/deepthroat all the way/wet and sloppy makes it easy.mp4'
+    LOCAL_FILE_PATH="$JELLYFIN_LOCAL_DATA_FOLDER$RELATIVE_PATH"
+    REMOTE_FILE_PATH="$(jellyfin_remote_path $LOCAL_FILE_PATH)"
+
+Find the jellyfin data for that file
+
+
 ## API Reference
 
 Jellyfin API documentation is available at:

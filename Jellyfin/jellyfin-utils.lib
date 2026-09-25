@@ -18,7 +18,7 @@
 
 [[ $JELLYFIN_DIR ]] || JELLYFIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 [[ $SCRIPT_DIR ]] || SCRIPT_DIR="$(dirname $JELLYFIN_DIR)"
-source "$SCRIPT_DIR/feedback.lib"
+source "$(which feedback_functions.lib)"
 
 # these valuse are required, if not set, use the nearest  .env ones.
 [[ $JELLYFIN_USERID ]] || source "$JELLYFIN_DIR/.env" 2>/dev/null || log_error "JELLYFIN_USERID not set"

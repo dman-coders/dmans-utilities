@@ -1,5 +1,9 @@
+#!/bin/bash
 # Things to try with Jellyfin API:
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+set -e
+
+SCRIPT_DIR="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
 source "$SCRIPT_DIR/jellyfin-utils.lib"
 
 # List the collections
@@ -12,7 +16,7 @@ COLLECTION_ID=$(echo $COLLECTION_JSON | jq -r '.Id')
 log_success "Selected collection: $COLLECTION_NAME $COLLECTION_ID"
 
 # List the items in that collections
-#COLLECTION_ITEMS=$( ./CollectionItems "$COLLECTION_ID" )
+#COLLECTION_ITEMS_JSON=$( jf CollectionItems "$COLLECTION_ID" )
 
 # Select a random item from the collection.
 # Select a media resource, not a container.
@@ -39,7 +43,7 @@ SERVER_FILE_PATH=$( echo "$ITEM_JSON" | jq -r '.Path' )
 LOCAL_FILE_PATH=$( jellyfin_local_path "$SERVER_FILE_PATH" )
 # See if we can access it directly.
 if [[ -f "$LOCAL_FILE_PATH" ]]; then
-    log_success "Local file exists. '$LOCAL_FILE_PATH'"
+    log_success "Locally linked file can be found. '$LOCAL_FILE_PATH'"
 else
     log_error "Local file is not accessible! Is the drive mapping atttached? '$LOCAL_FILE_PATH' "
 fi

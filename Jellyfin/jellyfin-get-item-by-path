@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/jellyfin-utils.lib"
+JELLYFIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$(which feedback_functions.lib)"
+source "$JELLYFIN_DIR/jellyfin-utils.lib"
 
 # jellyfin-get-item-by-path - Retrieve Jellyfin item by filesystem path
 #
@@ -18,7 +20,8 @@ FILE_PATH=$(jellyfin_normalize_path "$FILE_PATH")
 
 log_info "Looking up item by path: $FILE_PATH"
 
-# Fetch items with Path field
+# Stupidly inefficient.
+# Fetch ALL items with Path field
 RESPONSE=$(curl -s -H "Authorization: MediaBrowser Token=\"$JELLYFIN_API_KEY\"" \
     "${JELLYFIN_API_URL}/Items?Recursive=true&IncludeItemTypes=Video,Photo&Fields=Path,Name,Id,Tags,Genres,Type,Container,RunTimeTicks,PremiereDate,ImageTags&Limit=1000")
 
@@ -27,6 +30,7 @@ ITEM=$(echo "$RESPONSE" | jq --arg path "$FILE_PATH" '.Items[] | select(.Path ==
 
 if [ -z "$ITEM" ] || [ "$ITEM" = "null" ]; then
     log_error "Item not found at path: $FILE_PATH"
+    echo $RESPONSE | jq
     exit 1
 fi
 
