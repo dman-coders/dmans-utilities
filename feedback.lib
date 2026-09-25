@@ -37,3 +37,7 @@ log_error(){
 log_success(){
   printf "${SUCCESS_COLOR}%s${COLOR_RESET}\n" "$1" >&2
 }
+
+# Deprecated
+echo "DON'T USE feedback.lib"
+exit 99
