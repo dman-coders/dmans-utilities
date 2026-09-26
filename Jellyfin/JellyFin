@@ -29,8 +29,10 @@ TestConnection() {
 
     if jellyfin_success; then
         log_success "Connected successfully"
-        local SERVER_NAME=$(echo "$API_BODY" | jq -r '.ServerName')
-        local SERVER_VERSION=$(echo "$API_BODY" | jq -r '.Version')
+        local SERVER_NAME
+        SERVER_NAME=$(echo "$API_BODY" | jq -r '.ServerName')
+        local SERVER_VERSION
+        SERVER_VERSION=$(echo "$API_BODY" | jq -r '.Version')
         log_notice "Server: $SERVER_NAME (v$SERVER_VERSION)"
         return 0
     else
@@ -853,13 +855,14 @@ GetItemByPath() {
 
 # Given a local path that's configured to be mapped to the server data folder, find the corresponding Jellyfin item.
 GetItemByLocalPath() {
-  local LOCAL_PATH="$1";
-  local REMOTE_PATH=$(jellyfin_remote_path "$LOCAL_PATH");
-  if [[ -z "$REMOTE_PATH" ]]; then
-    log_error "Failed to map local path to remote path"
-    return 1
-  fi
-  echo $(GetItemByPath "$REMOTE_PATH");
+    local LOCAL_PATH="$1"
+    local REMOTE_PATH
+    REMOTE_PATH=$(jellyfin_remote_path "$LOCAL_PATH")
+    if [[ -z "$REMOTE_PATH" ]]; then
+        log_error "Failed to map local path to remote path"
+        return 1
+    fi
+    GetItemByPath "$REMOTE_PATH"
 }
 
 # UpdateItem - Update a Jellyfin item (general purpose item update)
@@ -897,7 +900,8 @@ UpdateItem() {
 
     # Step 1: Get current item
     log_debug "Fetching current item state : id $ITEM_ID"
-    local current_item_raw=$(GetItem "$ITEM_ID" --output raw | tail -1)
+    local current_item_raw
+    current_item_raw=$(GetItem "$ITEM_ID" --output raw | tail -1)
     if [ -z "$current_item_raw" ]; then
         log_error "Failed to fetch current item state"
         return 1
@@ -1077,9 +1081,10 @@ CreateCollection() {
     fi
 
     # URL encode the name
-    local ENCODED_NAME=$(printf %s "$NAME" | jq -sRr @uri)
+    local ENCODED_NAME
+    ENCODED_NAME=$(printf %s "$NAME" | jq -sRr @uri)
 
-    local URL_PARAMS="?Name=$ENCODED_NAME&UserId=$JELLYFIN_USERID"
+    local URL_PARAMS="?Name=${ENCODED_NAME}&UserId=${JELLYFIN_USERID}"
     [ -n "$ITEM_IDS" ] && URL_PARAMS="${URL_PARAMS}&Ids=$ITEM_IDS"
     [ -n "$PARENT_ID" ] && URL_PARAMS="${URL_PARAMS}&ParentId=$PARENT_ID"
     [ "$IS_LOCKED" = "true" ] && URL_PARAMS="${URL_PARAMS}&IsLocked=true"
@@ -1089,10 +1094,11 @@ CreateCollection() {
     [ -n "$PARENT_ID" ] && log_debug "  Parent ID: $PARENT_ID"
     [ "$IS_LOCKED" = "true" ] && log_debug "  Locked: yes"
 
-    jellyfin_request POST "/Collections$URL_PARAMS"
+    jellyfin_request POST "/Collections${URL_PARAMS}"
 
     if jellyfin_success; then
-        local COLLECTION_ID=$(echo "$API_BODY" | jq -r '.Id')
+        local COLLECTION_ID
+        COLLECTION_ID=$(echo "$API_BODY" | jq -r '.Id')
         log_success "Collection created successfully"
         log_notice "  Collection ID: $COLLECTION_ID"
 
@@ -1147,12 +1153,13 @@ AddItemToCollection() {
     jellyfin_require_args 2 $((1 + $#)) "Usage: JellyFin AddItemToCollection COLLECTION_ID ITEM_ID [ITEM_ID ...]" || return 1
     [ $# -gt 0 ] || { log_error "At least one ITEM_ID is required"; return 1; }
 
-    local ITEM_IDS=$(jellyfin_join_ids "," "$@")
+    local ITEM_IDS
+    ITEM_IDS=$(jellyfin_join_ids "," "$@")
 
     log_info "Adding items to collection: $COLLECTION_ID"
     log_debug "  Items: $ITEM_IDS"
 
-    jellyfin_request POST "/Collections/$COLLECTION_ID/Items?Ids=$ITEM_IDS"
+    jellyfin_request POST "/Collections/${COLLECTION_ID}/Items?Ids=${ITEM_IDS}"
     jellyfin_handle_response "Items added to collection successfully"
 }
 
@@ -1175,12 +1182,13 @@ RemoveItemFromCollection() {
     jellyfin_require_args 2 $((1 + $#)) "Usage: JellyFin RemoveItemFromCollection COLLECTION_ID ITEM_ID [ITEM_ID ...]" || return 1
     [ $# -gt 0 ] || { log_error "At least one ITEM_ID is required"; return 1; }
 
-    local ITEM_IDS=$(jellyfin_join_ids "," "$@")
+    local ITEM_IDS
+    ITEM_IDS=$(jellyfin_join_ids "," "$@")
 
     log_info "Removing items from collection: $COLLECTION_ID"
     log_debug "  Items: $ITEM_IDS"
 
-    jellyfin_request DELETE "/Collections/$COLLECTION_ID/Items?Ids=$ITEM_IDS"
+    jellyfin_request DELETE "/Collections/${COLLECTION_ID}/Items?Ids=${ITEM_IDS}"
     jellyfin_handle_response "Items removed from collection successfully"
 }
 
@@ -1204,7 +1212,8 @@ FindItemCollections() {
     log_info "Finding collections for item: $ITEM_ID"
 
     # Get all collections
-    local COLLECTIONS=$(ListCollections)
+    local COLLECTIONS
+    COLLECTIONS=$(ListCollections "$@")
 
     if [ -z "$COLLECTIONS" ]; then
         log_error "Could not retrieve collections"
@@ -1212,8 +1221,9 @@ FindItemCollections() {
     fi
 
     # For each collection, check if item is a member
-    echo "$COLLECTIONS" | jq -r '.[] | .Id' | while read COLL_ID; do
-        local MATCH=$(Items --parent-id "$COLL_ID" --fields Id | \
+    echo "$COLLECTIONS" | jq -r '.[] | .Id' | while read -r COLL_ID; do
+        local MATCH
+        MATCH=$(Items --parent-id "$COLL_ID" --fields Id | \
                 jq --arg itemid "$ITEM_ID" 'map(select(.Id == $itemid)) | length')
 
         if [ "$MATCH" == "1" ]; then
@@ -1265,9 +1275,10 @@ UpdateTags() {
         shift
 
         # Fetch current tags via GetItem, suppress logging
-        log_notice "Current tags are $(GetItem $ITEM_ID --fields Tags )"
+        log_notice "Current tags are $(GetItem "$ITEM_ID" --fields Tags)"
         # { "Tags": [ "tag3", "tag4" ] }
-        local EXISTING_TAGS_JSON=$(GetItem "$ITEM_ID" --fields Tags | jq '.Tags // []' )
+        local EXISTING_TAGS_JSON
+        EXISTING_TAGS_JSON=$(GetItem "$ITEM_ID" --fields Tags | jq '.Tags // []')
 
         # Merge new tags with existing
         local NEW_TAGS=()
@@ -1275,6 +1286,7 @@ UpdateTags() {
             NEW_TAGS+=("$1")
             shift
         done
+        local NEW_TAGS_JSON
         NEW_TAGS_JSON=$(printf '%s\n' "${NEW_TAGS[@]}" | jq -R . | jq -s .)
 
         log_debug "Merging Existing tags  $EXISTING_TAGS_JSON with New tags $NEW_TAGS $NEW_TAGS_JSON ${NEW_TAGS[*]}"
@@ -1310,16 +1322,17 @@ UpdateTags() {
     fi
 
     # Build JSON payload
-    local PAYLOAD=$(jq -n --argjson tags "$TAGS_JSON" '{"Tags": $tags}')
+    local PAYLOAD
+    PAYLOAD=$(jq -n --argjson tags "$TAGS_JSON" '{"Tags": $tags}')
 
     log_debug "Tags (mode: $MODE): $(echo "$TAGS_JSON" | jq '.')"
 
     # Update the item via UpdateItem function
     log_debug "UpdateItem $ITEM_ID \"$PAYLOAD\" "
-    local RESULT=$(UpdateItem "$ITEM_ID" "$PAYLOAD" 2| log_error)
-    # log_debug "$RESULT"
+    local RESULT
+    RESULT=$(UpdateItem "$ITEM_ID" "$PAYLOAD" 2>&1)
 
-    if [ $? -eq 0 ]; then
+    if UpdateItem "$ITEM_ID" "$PAYLOAD" >/dev/null 2>&1; then
         # Extract and display just the Tags from the result
         echo "$RESULT" | jq '.Tags'
         return 0
@@ -1373,12 +1386,14 @@ Hierarchy() {
         name=$(echo "$item_json" | jq -r '.Name')
         path=$(echo "$item_json" | jq -r '.Path')
         # trim the known server root path off this for brevity
-        path="${path#$JELLYFIN_ROOT_DATA_FOLDER}"
+        path="${path#"${JELLYFIN_ROOT_DATA_FOLDER}"}"
         isFolder=$(echo "$item_json" | jq -r '.IsFolder')
 
         # Use tput for colors (no hardcoded escape codes)
-        local blue=$(tput setaf 4)
-        local reset=$(tput sgr0)
+        local blue
+        blue=$(tput setaf 4)
+        local reset
+        reset=$(tput sgr0)
 
         if [[ "$isFolder" == "true" ]]; then
             name="${blue}${name}${reset}"
@@ -1392,7 +1407,12 @@ Hierarchy() {
     walk_hierarchy() {
         local parent_id="$1"
         local indent="${2:-1}"
-        local children_json child_count i child_json child_id isFolder
+        local children_json
+        local child_count
+        local i
+        local child_json
+        local child_id
+        local isFolder
 
         # Normal lookup does not include Path info. Specify it.
         children_json=$( Items --parent-id "$parent_id" --fields Path --no-recursive )
@@ -1416,8 +1436,10 @@ Hierarchy() {
     }
 
     # Get the root item
-    local TOP_ITEM_JSON=$( Items --type AggregateFolder | jq -r '.[0]' )
-    local TOP_ITEM=$( echo "$TOP_ITEM_JSON" | jq -r '.Id' )
+    local TOP_ITEM_JSON
+    TOP_ITEM_JSON=$( Items --type AggregateFolder | jq -r '.[0]' )
+    local TOP_ITEM
+    TOP_ITEM=$( echo "$TOP_ITEM_JSON" | jq -r '.Id' )
 
     log_info "Displaying Jellyfin library hierarchy"
 
