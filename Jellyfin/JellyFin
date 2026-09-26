@@ -280,11 +280,15 @@ Items() {
                 shift
                 ;;
             --tags)
-                EXTRA_PARAMS="${EXTRA_PARAMS}&Tags=$2"
+                local ENCODED_TAGS
+                ENCODED_TAGS=$(echo -n "$2" | jq -sRr @uri)
+                EXTRA_PARAMS="${EXTRA_PARAMS}&Tags=${ENCODED_TAGS}"
                 shift 2
                 ;;
             --genres)
-                EXTRA_PARAMS="${EXTRA_PARAMS}&Genres=$2"
+                local ENCODED_GENRES
+                ENCODED_GENRES=$(echo -n "$2" | jq -sRr @uri)
+                EXTRA_PARAMS="${EXTRA_PARAMS}&Genres=${ENCODED_GENRES}"
                 shift 2
                 ;;
             --search-term)
@@ -830,7 +834,7 @@ GetItemByPath() {
 
     # Step 2: Query files in the container
     local FILES
-    FILES=$(Items --parent-id "$CONTAINER_ID" --type Video,Photo --fields Id,Name,Path,Tags,Genres,Type,Container,RunTimeTicks,PremiereDate,ImageTags --limit 500 )
+    FILES=$(Items --parent-id "$CONTAINER_ID" --type Video,Photo --fields Id,Name,Path,Tags,Genres,Type,Container --limit 500 )
 
     if [ -z "$FILES" ] || [ "$FILES" = "[]" ]; then
         log_error "No files found in container $CONTAINER_ID"
@@ -1202,7 +1206,8 @@ RemoveItemFromCollection() {
 #
 # Usage: FindItemCollections ITEM_ID
 #
-# Returns: JSON array of collections containing the item (for diagnostics)
+# Returns: JSON array of collections containing the item.
+# An item may be in more trhan one collection
 #
 FindItemCollections() {
     local ITEM_ID="$1"
@@ -1213,7 +1218,7 @@ FindItemCollections() {
 
     # Get all collections
     local COLLECTIONS
-    COLLECTIONS=$(ListCollections "$@")
+    COLLECTIONS=$(ListCollections)
 
     if [ -z "$COLLECTIONS" ]; then
         log_error "Could not retrieve collections"
@@ -1221,13 +1226,17 @@ FindItemCollections() {
     fi
 
     # For each collection, check if item is a member
-    echo "$COLLECTIONS" | jq -r '.[] | .Id' | while read -r COLL_ID; do
+    # It's possible to be in multiple collections, so it returns a list.
+    echo "$COLLECTIONS" | jq -r '.[] | .Id' | while read -r COLLECTION_ID; do
+        log_debug "Searching collection $COLLECTION_ID for $ITEM_ID"
         local MATCH
-        MATCH=$(Items --parent-id "$COLL_ID" --fields Id | \
+        # could use CollectionItems but it's a one-liner
+        MATCH=$(Items --parent-id "$COLLECTION_ID" --fields Id,Path | \
                 jq --arg itemid "$ITEM_ID" 'map(select(.Id == $itemid)) | length')
 
         if [ "$MATCH" == "1" ]; then
-            echo "$COLLECTIONS" | jq --arg cid "$COLL_ID" '.[] | select(.Id == $cid)'
+            log_success "Item $ITEM_ID is a member of $COLLECTION_ID"
+            echo "$COLLECTIONS" | jq --arg cid "$COLLECTION_ID" '.[] | select(.Id == $cid)'
         fi
     done | jq -s '.'
 }

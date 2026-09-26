@@ -82,16 +82,10 @@ Total tags in library:
 47
 
 Sample tags:
-Orgasm
 PMV
-Prone bone
-Pussy Grip
-regardscoupable
-Reverse facefuck
-Reverse Piledriver
-Rimming
 Rythmic
-sexy pics
+Romantic
+Exotic
 ```
 
 ## Complete Demonstration Script
@@ -205,7 +199,7 @@ Item (from GetItemByPath)
 - Custom, user-defined categorizations
 - Flat list (no hierarchy)
 - 47 available tags in sample library
-- Example: "B&W", "PMV", "Orgasm"
+- Example: "B&W", "PMV", "Professional"
 
 ### Genres
 - System-provided genre classifications
@@ -269,9 +263,92 @@ echo "Genres: $(echo "$ITEM" | jq -c '.Genres')"
 echo "Collections: $(echo "$COLLECTIONS" | jq -c '[.[].Name]')"
 ```
 
+## Querying by Tags vs Collections
+
+### Tags: Limited Query Support
+
+Tags can be queried via the API with proper URL encoding, but have limitations:
+
+**Note: URL Encoding Required**
+Special characters in tag names (like "&" in "B&W") must be URL encoded:
+```bash
+# This now works (with URL encoding fix)
+jf Items --tags "B&W" --fields Tags --limit 10
+# Result: Returns 1 item with "B&W" tag
+
+jf Items --tags "happy" --fields Tags
+# Result: Returns items with "happy" tag
+```
+
+**Problem: Tags not returned by default**
+```bash
+# Tags field is NULL unless explicitly requested
+jf Items --recursive --limit 1000 | jq '.[] | .Tags'  
+# Result: null for all items
+
+# Solution: Must explicitly request the field
+jf Items --recursive --fields Tags --limit 1000 | jq '.[] | .Tags'  
+# Result: ["B&W"], ["PMV"], etc.
+```
+
+**Limitations:**
+- Must explicitly request `--fields Tags` to include tags in response
+- Tags are not "first-class" Items - they're metadata on items
+- Flat hierarchy (no tag nesting)
+- Not optimized for organizational queries
+- API returns only a subset of fields even when querying by tag
+
+### Collections: Strong Query Support
+
+Collections (BoxSets) are the **recommended** organizational method:
+
+**Direct querying by collection ID**
+```bash
+# Efficient: returns only items in this collection
+COLLECTION_ID="collection-id"
+jf Items --parent-id "$COLLECTION_ID" 2>/dev/null | \
+  jq -r '.[] | .Name'
+```
+
+**Benefits:**
+- Native API support via `--parent-id` parameter
+- Efficient filtering at the API level
+- Explicit membership (BoxSet contains items)
+- Can query all collections for an item: `FindItemCollections`
+- Discoverable in Jellyfin UI
+- Can be nested/hierarchical
+
+### Comparison Matrix
+
+| Feature | Tags | Collections |
+|---------|------|-------------|
+| Query Efficiency | Poor (fetch all + filter) | Excellent (direct query) |
+| API Support | Weak (no filtering) | Strong (ParentId) |
+| Scalability | Bad for large libraries | Great for any size |
+| Membership Model | Flexible labels | Explicit groups |
+| UI Integration | Low visibility | High visibility |
+| Query Speed | O(n) items | O(1) lookup |
+| Recommended For | Metadata/attributes | Primary organization |
+
+### Recommendation
+
+**If you want to organize and query items efficiently: Use Collections**
+
+- Create BoxSet collections for your organizational structure
+- Query via: `jf Items --parent-id <collection_id>`
+- Find collections for an item: `jf FindItemCollections <item_id>`
+- Tags are better used for supplementary attributes/labels
+
+**Tags are appropriate for:**
+- Cross-cutting categorization (e.g., "favorite", "needs_review")
+- Attributes that don't define primary grouping
+- Metadata decoration (displayed in UI but not primary filter)
+
 ## Notes
 
 - All functions support `2>/dev/null` to suppress debug logging
 - Use `LOGLEVEL=7` to enable verbose logging for troubleshooting
 - jq is used for JSON parsing and filtering throughout examples
 - The `/tmp/test_*.sh` scripts from development contain additional examples
+- Tags require `--fields Tags` to be included in Items query response
+- Collections should be the primary organizational method for efficient querying

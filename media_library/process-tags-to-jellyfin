@@ -1,0 +1,634 @@
+#!/bin/bash
+set -e
+
+# Synchronize EXIF Subject keywords from files into Jellyfin collections
+# Design: See PROCESS_TAGS_TO_JELLYFIN_DESIGN.md
+
+# ============================================================================
+# Configuration & Initialization
+# ============================================================================
+
+SCRIPT_NAME="$(basename "$0")"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+JELLYFIN_DIR="$(dirname "$SCRIPT_DIR")/Jellyfin"
+
+# Default options
+DRY_RUN=false
+APPEND_MODE=true
+HIERARCHICAL=false
+PARALLEL=false
+TEST_CONNECTION=false
+UPDATE_TAGS=false
+
+# ============================================================================
+# Library Sourcing (order matters)
+# ============================================================================
+
+source "$(which feedback_functions.lib)" 2>/dev/null || {
+    echo "ERROR: feedback_functions.lib not found" >&2
+    exit 1
+}
+
+source "$SCRIPT_DIR/process_media.lib" 2>/dev/null || {
+    log_error "process_media.lib not found at $SCRIPT_DIR/process_media.lib"
+    exit 1
+}
+
+source "$JELLYFIN_DIR/jellyfin-utils.lib" 2>/dev/null || {
+    log_error "jellyfin-utils.lib not found at $JELLYFIN_DIR/jellyfin-utils.lib"
+    exit 1
+}
+
+# Jellyfin CLI script
+JF_SCRIPT="$JELLYFIN_DIR/JellyFin"
+if [[ ! -f "$JF_SCRIPT" ]]; then
+    log_error "JellyFin script not found at $JF_SCRIPT"
+    exit 1
+fi
+
+# Load Jellyfin environment variables if available
+[[ -f "$JELLYFIN_DIR/.env" ]] && source "$JELLYFIN_DIR/.env"
+
+# ============================================================================
+# Phase 1: File Information Extraction
+# ============================================================================
+
+extract_and_validate_file_tags() {
+    local file_path="$1"
+
+    log_subsection "Extracting EXIF tags from: $(basename "$file_path")"
+
+    if [[ ! -f "$file_path" ]]; then
+        log_error "File not found: $file_path"
+        return 1
+    fi
+
+    if [[ ! -r "$file_path" ]]; then
+        log_error "File not readable: $file_path"
+        return 1
+    fi
+
+    local tags
+    if ! tags=$(extract_exif_tags "$file_path" 2>/dev/null); then
+        log_debug "No EXIF tags found in: $file_path"
+        return 1
+    fi
+
+    if [[ -z "$tags" ]]; then
+        log_debug "File has no EXIF Subject/Keywords metadata"
+        return 1
+    fi
+
+    local tag_count
+    tag_count=$(echo "$tags" | wc -l)
+    log_success "Found $tag_count tag(s)"
+    log_debug "Tags: $(echo "$tags" | tr '\n' ', ' | sed 's/,$//')"
+
+    echo "$tags"
+    return 0
+}
+
+validate_file_for_processing() {
+    local file_path="$1"
+
+    if [[ ! -f "$file_path" ]]; then
+        log_error "Not a regular file: $file_path"
+        return 1
+    fi
+
+    if [[ ! -r "$file_path" ]]; then
+        log_error "File not readable: $file_path"
+        return 1
+    fi
+
+    if [[ ! -s "$file_path" ]]; then
+        log_warning "File is empty: $file_path"
+        return 0
+    fi
+
+    return 0
+}
+
+# ============================================================================
+# Phase 2: Jellyfin State Gathering
+# ============================================================================
+
+find_jellyfin_item_for_file() {
+    local file_path="$1"
+
+    log_subsection "Looking up item in Jellyfin"
+
+    if [[ ! -f "$file_path" ]]; then
+        log_error "File not found: $file_path"
+        return 1
+    fi
+
+    local item_json
+    if ! item_json=$("$JF_SCRIPT" GetItemByPath "$file_path" 2>/dev/null); then
+        log_error "Item not found in Jellyfin for: $file_path"
+        return 1
+    fi
+
+    if [[ -z "$item_json" ]]; then
+        log_error "GetItemByPath returned empty response"
+        return 1
+    fi
+
+    local item_id
+    item_id=$(echo "$item_json" | jq -r '.Id // empty' 2>/dev/null)
+    if [[ -z "$item_id" ]]; then
+        log_error "Could not extract Item ID from response"
+        return 1
+    fi
+
+    local item_name
+    item_name=$(echo "$item_json" | jq -r '.Name // empty')
+
+    log_success "Found item: $item_name (ID: $item_id)"
+    log_debug "Item path: $(echo "$item_json" | jq -r '.Path // "unknown"')"
+
+    echo "$item_json"
+    return 0
+}
+
+get_item_current_collections() {
+    local item_id="$1"
+
+    if [[ -z "$item_id" ]]; then
+        log_error "Item ID is empty"
+        return 1
+    fi
+
+    log_subsection "Retrieving current collections"
+
+    local collections_json
+    if ! collections_json=$("$JF_SCRIPT" FindItemCollections "$item_id" 2>/dev/null); then
+        log_error "API error retrieving collections"
+        return 1
+    fi
+
+    # FindItemCollections returns empty array [] if item not in any collections
+    if [[ -z "$collections_json" ]]; then
+        collections_json="[]"
+    fi
+
+    local count
+    count=$(echo "$collections_json" | jq 'length' 2>/dev/null || echo 0)
+
+    if [[ "$count" -eq 0 ]]; then
+        log_debug "Item is not currently in any collections"
+    else
+        log_debug "Item is in $count collection(s)"
+        echo "$collections_json" | jq -r '.[] | .Name' 2>/dev/null | while read -r name; do
+            log_debug "  - $name"
+        done
+    fi
+
+    echo "$collections_json"
+    return 0
+}
+
+get_item_current_tags() {
+    local item_id="$1"
+
+    if [[ -z "$item_id" ]]; then
+        log_error "Item ID is empty"
+        return 1
+    fi
+
+    log_subsection "Retrieving current tags"
+
+    local item_json
+    if ! item_json=$("$JF_SCRIPT" GetItem "$item_id" --fields Tags 2>/dev/null); then
+        log_warning "API error retrieving tags (continuing)"
+        echo "[]"
+        return 0
+    fi
+
+    local tags_json
+    tags_json=$(echo "$item_json" | jq '.Tags // []' 2>/dev/null)
+
+    local count
+    count=$(echo "$tags_json" | jq 'length' 2>/dev/null || echo 0)
+
+    if [[ "$count" -eq 0 ]]; then
+        log_debug "Item has no Jellyfin tags"
+    else
+        log_debug "Item has $count tag(s)"
+    fi
+
+    echo "$tags_json"
+    return 0
+}
+
+# ============================================================================
+# Phase 3: Comparison & Analysis
+# ============================================================================
+
+compare_tags_to_collections() {
+    local tags_input="$1"           # newline-separated EXIF tags
+    local collections_json="$2"     # JSON array from FindItemCollections
+
+    log_subsection "Comparing EXIF tags to collections"
+
+    if [[ -z "$tags_input" ]]; then
+        log_debug "No EXIF tags to process"
+        echo '{"to_create":[],"to_add":[],"already_member":[]}'
+        return 0
+    fi
+
+    # Use jq to do all the comparison logic (avoids bash 4+ features)
+    local plan_json
+    plan_json=$(jq -n \
+        --arg tags "$(echo "$tags_input" | sort -u | paste -sd '|' -)" \
+        --argjson colls "$collections_json" \
+        '
+        # Split tags by pipe into array
+        ($tags | split("|")) as $tags |
+
+        # Extract IDs from collections (items already in these collections)
+        ($colls | map(.Id) | map(.)) as $existing_ids |
+
+        # Build collection map (name to id, lowercase keys)
+        ($colls | reduce .[] as $c ({}; .[$c.Name | ascii_downcase] = $c.Id)) as $coll_map |
+
+        # Categorize tags
+        (reduce $tags[] as $tag (
+            {"to_create": [], "to_add": [], "already_member": []};
+            if $coll_map[($tag | ascii_downcase)] then
+                # Collection exists for this tag - item is already a member
+                .already_member += [$tag]
+            else
+                # Tag needs new collection
+                .to_create += [$tag]
+            end
+        )) as $plan |
+
+        $plan
+        ')
+
+    if [[ -z "$plan_json" ]]; then
+        log_error "Comparison failed"
+        return 1
+    fi
+
+    local create_count
+    local add_count
+    local member_count
+    create_count=$(echo "$plan_json" | jq '.to_create | length' 2>/dev/null || echo 0)
+    add_count=$(echo "$plan_json" | jq '.to_add | length' 2>/dev/null || echo 0)
+    member_count=$(echo "$plan_json" | jq '.already_member | length' 2>/dev/null || echo 0)
+
+    log_info "Analysis complete:"
+    log_debug "  To create: $create_count"
+    log_debug "  To add: $add_count"
+    [[ $member_count -gt 0 ]] && log_debug "  Already member: $member_count"
+
+    echo "$plan_json"
+    return 0
+}
+
+# ============================================================================
+# Phase 4: Collection Management & Updates
+# ============================================================================
+
+create_missing_collections() {
+    local tags_input="$1"       # newline-separated tag names
+    local item_id="$2"          # Jellyfin Item ID to add as member
+
+    if [[ -z "$tags_input" ]]; then
+        log_debug "No collections to create"
+        echo '{}'
+        return 0
+    fi
+
+    log_subsection "Creating missing collections"
+
+    local tag_count=0
+    local error_count=0
+    local -a success_pairs   # Array of "tag|id" pairs
+
+    while read -r tag; do
+        [[ -z "$tag" ]] && continue
+        ((tag_count++))
+
+        log_info "Creating collection: '$tag'"
+
+        local collection_id
+        if collection_id=$("$JF_SCRIPT" CreateCollection --name "$tag" --items "$item_id" 2>/dev/null); then
+            log_success "Created collection: '$tag' (ID: $collection_id)"
+            success_pairs+=("$tag|$collection_id")
+        else
+            log_error "Failed to create collection: '$tag'"
+            ((error_count++))
+        fi
+    done < <(echo "$tags_input" | sort -u)
+
+    log_debug "Created $((tag_count - error_count))/$tag_count collections"
+
+    # Output as JSON
+    {
+        echo -n '{'
+        local first=true
+        for pair in "${success_pairs[@]}"; do
+            local tag="${pair%|*}"
+            local id="${pair#*|}"
+            if [[ "$first" = false ]]; then echo -n ','; fi
+            printf '"%s":"%s"' "$tag" "$id"
+            first=false
+        done
+        echo '}'
+    }
+
+    if [[ $error_count -gt 0 ]]; then
+        return 1
+    fi
+
+    return 0
+}
+
+add_item_to_collections() {
+    local item_id="$1"
+    local collection_ids_json="$2"   # JSON array of IDs
+
+    if [[ -z "$item_id" ]]; then
+        log_error "Item ID is empty"
+        return 1
+    fi
+
+    if [[ -z "$collection_ids_json" ]]; then
+        log_debug "No collections to add"
+        return 0
+    fi
+
+    log_subsection "Adding item to collections"
+
+    local collection_count=0
+    local success_count=0
+    local error_count=0
+
+    while read -r collection_id; do
+        [[ -z "$collection_id" ]] && continue
+        ((collection_count++))
+
+        log_info "Adding to collection (ID: $collection_id)"
+
+        if "$JF_SCRIPT" AddItemToCollection "$collection_id" "$item_id" 2>/dev/null; then
+            ((success_count++))
+            log_success "Added to collection"
+        else
+            log_error "Failed to add to collection"
+            ((error_count++))
+        fi
+    done < <(echo "$collection_ids_json" | jq -r '.[]' 2>/dev/null)
+
+    log_debug "Added to $success_count/$collection_count collections"
+
+    if [[ $error_count -gt 0 ]]; then
+        return 1
+    fi
+
+    return 0
+}
+
+# ============================================================================
+# Orchestration
+# ============================================================================
+
+process_single_file() {
+    local file_path="$1"
+
+    log_section "Processing: $(basename "$file_path")"
+
+    # Validate file
+    if ! validate_file_for_processing "$file_path"; then
+        return 1
+    fi
+
+    # Phase 1: Extract EXIF tags
+    local tags_output
+    if ! tags_output=$(extract_and_validate_file_tags "$file_path"); then
+        log_notice "No EXIF tags found, skipping file"
+        return 2
+    fi
+
+    # Phase 2: Find item in Jellyfin
+    local item_json
+    if ! item_json=$(find_jellyfin_item_for_file "$file_path"); then
+        return 1
+    fi
+
+    local item_id
+    item_id=$(echo "$item_json" | jq -r '.Id')
+
+    # Phase 2: Get current state
+    local collections_json
+    collections_json=$(get_item_current_collections "$item_id" || echo "[]")
+
+    local tags_json
+    tags_json=$(get_item_current_tags "$item_id" || echo "[]")
+
+    # Phase 3: Compare
+    local plan_json
+    plan_json=$(compare_tags_to_collections "$tags_output" "$collections_json")
+
+    # Report plan
+    local to_create_count
+    local to_add_count
+    to_create_count=$(echo "$plan_json" | jq '.to_create | length')
+    to_add_count=$(echo "$plan_json" | jq '.to_add | length')
+
+    log_section "Action Plan"
+    log_notice "Will create: $to_create_count collection(s)"
+    log_notice "Will add to: $to_add_count collection(s)"
+
+    # Dry-run check
+    if [[ "$DRY_RUN" = true ]]; then
+        log_section "DRY-RUN MODE"
+        log_notice "No changes made to Jellyfin"
+        return 0
+    fi
+
+    # Phase 4: Execute updates
+    local to_create_list
+    to_create_list=$(echo "$plan_json" | jq -r '.to_create[]' 2>/dev/null)
+
+    if [[ -n "$to_create_list" ]]; then
+        if ! create_missing_collections "$to_create_list" "$item_id" >/dev/null; then
+            log_error "Failed to create some collections"
+            return 1
+        fi
+    fi
+
+    local to_add_list
+    to_add_list=$(echo "$plan_json" | jq '.to_add')
+
+    if [[ "$to_add_list" != "[]" ]]; then
+        if ! add_item_to_collections "$item_id" "$to_add_list"; then
+            log_error "Failed to add to some collections"
+            return 1
+        fi
+    fi
+
+    log_section "Completed"
+    log_success "File processed successfully"
+    return 0
+}
+
+# ============================================================================
+# Command-Line Interface
+# ============================================================================
+
+show_help() {
+    cat <<EOF
+Usage: $SCRIPT_NAME [OPTIONS] FILE|DIRECTORY [...]
+
+Synchronize EXIF Subject keywords from media files into Jellyfin collections.
+
+Options:
+  --dry-run              Extract tags and show plan, don't update Jellyfin
+  --append               Add tags to existing collections (default)
+  --replace              Replace all collections (use with caution)
+  --hierarchical         Create parent-child collection relationships (future)
+  --parallel             Process multiple files in parallel
+  --test-connection      Test Jellyfin API connection and exit
+  --update-tags          Also sync tags to Jellyfin Tags field (future)
+  --help                 Show this help message
+
+Environment:
+  LOGLEVEL=8             Set logging verbosity (feedback_functions.lib levels)
+
+Examples:
+  # Dry-run on single file
+  $SCRIPT_NAME --dry-run /path/to/media.mp4
+
+  # Process directory
+  $SCRIPT_NAME /path/to/media/folder/
+
+  # Process with debug logging
+  LOGLEVEL=DEBUG $SCRIPT_NAME /path/to/media.mp4
+
+  # Parallel processing
+  find /path/to/media -type f -name "*.mp4" | \\
+    xargs $SCRIPT_NAME --parallel
+
+Exit codes:
+  0  - Success
+  1  - Error
+  2  - Partial (e.g., no tags found)
+
+EOF
+}
+
+# ============================================================================
+# Main
+# ============================================================================
+
+main() {
+    local -a files
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --dry-run)
+                DRY_RUN=true
+                shift
+                ;;
+            --append)
+                APPEND_MODE=true
+                shift
+                ;;
+            --replace)
+                APPEND_MODE=false
+                shift
+                ;;
+            --hierarchical)
+                HIERARCHICAL=true
+                shift
+                ;;
+            --parallel)
+                PARALLEL=true
+                shift
+                ;;
+            --test-connection)
+                TEST_CONNECTION=true
+                shift
+                ;;
+            --update-tags)
+                UPDATE_TAGS=true
+                shift
+                ;;
+            --help|-h)
+                show_help
+                exit 0
+                ;;
+            -*)
+                log_error "Unknown option: $1"
+                show_help
+                exit 1
+                ;;
+            *)
+                files+=("$1")
+                shift
+                ;;
+        esac
+    done
+
+    # Test Jellyfin connection if requested (do this before checking files)
+    if [[ "$TEST_CONNECTION" = true ]]; then
+        log_info "Testing Jellyfin connection..."
+        if "$JF_SCRIPT" GetLibraries >/dev/null 2>&1; then
+            log_success "Jellyfin connection OK"
+            exit 0
+        else
+            log_error "Jellyfin connection failed"
+            exit 1
+        fi
+    fi
+
+    # Check for input files
+    if [[ ${#files[@]} -eq 0 ]]; then
+        log_error "No files specified"
+        show_help
+        exit 1
+    fi
+
+    # Process files
+    local exit_code=0
+    local processed=0
+    local success=0
+    local partial=0
+    local errors=0
+
+    for file in "${files[@]}"; do
+        if [[ -f "$file" ]]; then
+            ((processed++))
+            if process_single_file "$file"; then
+                ((success++))
+            else
+                if [[ $? -eq 2 ]]; then
+                    ((partial++))
+                else
+                    ((errors++))
+                    exit_code=1
+                fi
+            fi
+        elif [[ -d "$file" ]]; then
+            log_warning "Directory recursion not yet implemented: $file"
+        else
+            log_error "Not a file: $file"
+            exit_code=1
+        fi
+    done
+
+    # Summary
+    log_section "Summary"
+    log_info "Files processed: $processed"
+    log_info "Successful: $success"
+    [[ $partial -gt 0 ]] && log_info "Partial: $partial"
+    [[ $errors -gt 0 ]] && log_info "Errors: $errors"
+
+    exit "$exit_code"
+}
+
+main "$@"
