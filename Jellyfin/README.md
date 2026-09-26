@@ -1,10 +1,16 @@
 # Jellyfin Integration Utilities
 
-A collection of scripts and tools for automating media library management between the local `media_library` tag system and Jellyfin (a self-hosted media server). The goal is to keep collections, tags, and metadata synchronized without manual intervention.
+A collection of scripts and tools for automating media library management
+between the local `media_library` tag system and Jellyfin (a self-hosted
+media server). The goal is to keep collections, tags, and metadata
+synchronized without manual intervention.
 
-**Key scripts:** `JellyFin` (main orchestrator), `ListCollections`, `CreateCollection`, `MediaFolders`, `Genres`, plus utility functions in `jellyfin-utils.lib`.
+**Key scripts:** `JellyFin` (main orchestrator), `ListCollections`,
+`CreateCollection`, `MediaFolders`, `Genres`, plus utility functions in
+`jellyfin-utils.lib`.
 
-See `README-utilities.md` for detailed documentation of available scripts, API findings, and next steps for completing the integration toolkit.
+See `README-utilities.md` for detailed documentation of available scripts,
+API findings, and next steps for completing the integration toolkit.
 
 ## Testing
 
@@ -15,7 +21,9 @@ cd Jellyfin
 ./test.sh
 ```
 
-Refer to `test.sh` for the current test scenarios and to understand the integration testing approach. The test suite will evolve as new utility scripts are implemented.
+Refer to `test.sh` for the current test scenarios and to understand the
+integration testing approach. The test suite will evolve as new utility
+scripts are implemented.
 
 ### Oriantation
 #### investigate a single file.
@@ -35,11 +43,13 @@ Go find a file
 
     ls $JELLYFIN_LOCAL_DATA_FOLDER
 
-    RELATIVE_PATH='HOWTO/deepthroat all the way/wet and sloppy makes it easy.mp4'
+    RELATIVE_PATH='HOWTO/instructional/practice.mp4'
     LOCAL_FILE_PATH="$JELLYFIN_LOCAL_DATA_FOLDER$RELATIVE_PATH"
     REMOTE_FILE_PATH="$(jellyfin_remote_path $LOCAL_FILE_PATH)"
 
 Find the jellyfin data for that file
+
+    jf GetItemByPath $RELATIVE_PATH
 
 
 ## API Reference

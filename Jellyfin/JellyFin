@@ -125,6 +125,92 @@ ListCollections() {
     fi
 }
 
+# ListLibraryFolders - List all configured library folders (virtual collections)
+#
+# Wrapper around: GET /Library/VirtualFolders
+# Returns: Library folder metadata as keyed object for efficient lookups
+# Usage: JellyFin ListLibraryFolders [options]
+#
+# Options:
+#   --output format          Output format: summary (default), full, minimal
+#   --indexed-by key         Index by: id (default), path, or name
+#   --help                   Show this help
+#
+# Always returns a keyed object (never array):
+#   --indexed-by id:   {ItemId -> {Name, ItemId, Path}}
+#   --indexed-by path: {Path -> {Name, ItemId, Path}}
+#   --indexed-by name: {Name -> {Name, ItemId, Path}}
+ListVirtualFolders() {
+    local OUTPUT_FORMAT="summary"
+    local INDEX_BY="id"
+
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --output)
+                OUTPUT_FORMAT="$2"
+                shift 2
+                ;;
+            --indexed-by)
+                INDEX_BY="$2"
+                shift 2
+                ;;
+            --help)
+                log_notice "ListVirtualFolders - List all Jellyfin library folders"
+                log_notice ""
+                log_notice "Usage: JellyFin ListVirtualFolders [options]"
+                log_notice ""
+                log_notice "Options:"
+                log_notice "  --output format    Output format: summary (default), full, minimal"
+                log_notice "  --indexed-by key   Index by: id (default), path, or name"
+                log_notice "  --help              Show this help"
+                return 0
+                ;;
+            *)
+                log_error "Unknown option: $1"
+                return 1
+                ;;
+        esac
+    done
+
+    log_debug "Listing library folders from /Library/VirtualFolders"
+
+    local ENDPOINT="/Library/VirtualFolders"
+    jellyfin_request GET "$ENDPOINT"
+
+    if jellyfin_success; then
+        log_info "Rendering API result as $OUTPUT_FORMAT (indexed by $INDEX_BY)"
+
+        # Determine which field to use as the key
+        local KEY_FIELD
+        case "$INDEX_BY" in
+            id) KEY_FIELD=".ItemId" ;;
+            path) KEY_FIELD="(.Locations[0])" ;;
+            name) KEY_FIELD=".Name" ;;
+            *)
+                log_error "Invalid --indexed-by value: $INDEX_BY (must be id, path, or name)"
+                return 1
+                ;;
+        esac
+
+        # Build jq filter based on output format
+        local JQ_FILTER
+        if [ "$OUTPUT_FORMAT" = "full" ]; then
+            JQ_FILTER="reduce .[] as \$lib ({}; .[\$lib | $KEY_FIELD | tostring] = \$lib)"
+        elif [ "$OUTPUT_FORMAT" = "minimal" ]; then
+            JQ_FILTER="reduce .[] as \$lib ({}; .[\$lib | $KEY_FIELD | tostring] = {ItemId: \$lib.ItemId, Name: \$lib.Name})"
+        else
+            # summary format (default)
+            JQ_FILTER="reduce .[] as \$lib ({}; .[\$lib | $KEY_FIELD | tostring] = {Name: \$lib.Name, CollectionType: \$lib.CollectionType, ItemId: \$lib.ItemId, Path: \$lib.Locations[0]})"
+        fi
+
+        echo "$API_BODY" | jq "$JQ_FILTER"
+        return 0
+    else
+        log_error "Failed to list library folders (HTTP $API_STATUS): $API_BODY"
+        return 1
+    fi
+}
+
 # Items - Query Jellyfin items with flexible filtering
 #
 # API: GET /Items
@@ -135,29 +221,31 @@ ListCollections() {
 # Usage: Items [options]
 #
 # Options:
-#   --type TYPE              Include item types (Video, Photo, PhotoAlbum, BoxSet)
+#   --type TYPE              Include item types (Video, Photo, PhotoAlbum, BoxSet, Folder) - repeatable
 #   --recursive              Search recursively (default: true)
 #   --no-recursive           Disable recursive search
 #   --limit N                Limit results (default: 1000)
-#   --fields FIELD1,FIELD2   Fields to include
+#   --fields FIELD           Fields to include (repeatable, adds to default set)
+#   --location-types TYPE    Filter by location type (FileSystem, etc.)
+#   --filter FILTER          Apply filters like IsFolder (repeatable)
 #   --tags TAG               Filter by tag
 #   --genres GENRE           Filter by genre
+#   --search-term TERM       Fuzzy search by name/title
 #   --parent-id ID           Filter by parent folder ID
 #   --start-index N          Pagination start index
+#   --enable-total-count     Include total record count in response
 #   --help                   Show this help
 #
+
 Items() {
-    local INCLUDE_TYPES=""
     local RECURSIVE=true
     local LIMIT=1000
-    local FIELDS=""
     local EXTRA_PARAMS=""
 
     # Parse arguments
     while [[ $# -gt 0 ]]; do
         case $1 in
             --type)
-                INCLUDE_TYPES="$2"
                 EXTRA_PARAMS="${EXTRA_PARAMS}&IncludeItemTypes=$2"
                 shift 2
                 ;;
@@ -174,8 +262,20 @@ Items() {
                 shift 2
                 ;;
             --fields)
-                FIELDS="$2"
+                EXTRA_PARAMS="${EXTRA_PARAMS}&Fields=$2"
                 shift 2
+                ;;
+            --location-types)
+                EXTRA_PARAMS="${EXTRA_PARAMS}&LocationTypes=$2"
+                shift 2
+                ;;
+            --filter)
+                EXTRA_PARAMS="${EXTRA_PARAMS}&Filters=$2"
+                shift 2
+                ;;
+            --enable-total-count)
+                EXTRA_PARAMS="${EXTRA_PARAMS}&EnableTotalRecordCount=true"
+                shift
                 ;;
             --tags)
                 EXTRA_PARAMS="${EXTRA_PARAMS}&Tags=$2"
@@ -183,6 +283,12 @@ Items() {
                 ;;
             --genres)
                 EXTRA_PARAMS="${EXTRA_PARAMS}&Genres=$2"
+                shift 2
+                ;;
+            --search-term)
+                local ENCODED_TERM
+                ENCODED_TERM=$(echo -n "$2" | jq -sRr @uri)
+                EXTRA_PARAMS="${EXTRA_PARAMS}&SearchTerm=${ENCODED_TERM}"
                 shift 2
                 ;;
             --parent-id)
@@ -206,6 +312,7 @@ Items() {
                 log_notice "  --fields FIELD1,FIELD2   Fields to include"
                 log_notice "  --tags TAG               Filter by tag"
                 log_notice "  --genres GENRE           Filter by genre"
+                log_notice "  --search-term TERM       Fuzzy search by name/title"
                 log_notice "  --parent-id ID           Filter by parent folder ID"
                 log_notice "  --start-index N          Pagination start index"
                 log_notice "  --help                   Show this help"
@@ -218,10 +325,9 @@ Items() {
         esac
     done
 
-    log_debug "Querying items (type=$INCLUDE_TYPES, limit=$LIMIT)"
+    log_debug "Querying items (limit=$LIMIT)"
 
     local ENDPOINT="/Items?Recursive=$RECURSIVE&Limit=$LIMIT"
-    [ -n "$FIELDS" ] && ENDPOINT="${ENDPOINT}&Fields=$FIELDS"
     ENDPOINT="${ENDPOINT}${EXTRA_PARAMS}"
 
     jellyfin_request GET "$ENDPOINT"
@@ -607,6 +713,79 @@ GetItemLocalPath() {
     fi
 }
 
+# GetContainerByPath - Find the deepest physical container (folder) whose path is a prefix of the target
+#
+# Queries all physical filesystem containers and finds the longest Path that is a prefix of the target file path.
+# This is used by GetItemByPath to locate the container, then query files within that container.
+#
+# API: GET /Items with locationTypes=FileSystem, filters=IsFolder, includeItemTypes=Folder,PhotoAlbum
+# OperationId: GetItems
+#
+# Usage: GetContainerByPath "/path/to/file.mp4"
+#
+# Returns: JSON object {ItemId, Path, Name, ChildCount, RecursiveItemCount}
+#
+GetContainerByPath() {
+    local FILE_PATH="$1"
+
+    jellyfin_require_args 1 $# "Usage: JellyFin GetContainerByPath \"/path/to/file\"" || return 1
+
+    log_debug "Finding container for path: $FILE_PATH"
+
+    # Query all physical filesystem containers (folders) with Path field
+    local CONTAINERS
+    CONTAINERS=$(Items --location-types FileSystem --filter IsFolder --type Folder,PhotoAlbum --fields Path --fields Name --fields ChildCount --fields RecursiveItemCount --enable-total-count --recursive --limit 2000)
+
+    if [ -z "$CONTAINERS" ] || [ "$CONTAINERS" = "null" ] || [ "$CONTAINERS" = "[]" ]; then
+        log_error "Failed to fetch containers or no containers found"
+        return 1
+    fi
+
+    log_debug "Fetched $(echo "$CONTAINERS" | jq 'length') containers"
+
+    # Try to find matching container by recursively pruning path from right to left
+    # Start with full path, if no match try parent directory, keep going up
+    local TEST_PATH="$FILE_PATH"
+    local MATCHED_CONTAINER=""
+
+    while [ -n "$TEST_PATH" ] && [ "$TEST_PATH" != "/" ]; do
+        log_debug "Trying to match path: $TEST_PATH"
+
+        MATCHED_CONTAINER=$(echo "$CONTAINERS" | jq -e --arg testpath "$TEST_PATH" '
+            map(select(.Path != null))
+            | sort_by(.Path | length)
+            | reverse
+            | map(select(.Path as $p | $testpath | startswith($p)))
+            | .[0]
+            | {Id, Path, Name, ChildCount, RecursiveItemCount}
+        ')
+
+        if [ -n "$MATCHED_CONTAINER" ] && [ "$MATCHED_CONTAINER" != "null" ]; then
+            log_success "Found matching container for path: $TEST_PATH"
+            break
+        fi
+
+        # Remove rightmost path component and try again
+        TEST_PATH="${TEST_PATH%/*}"
+    done
+
+    if [ -z "$MATCHED_CONTAINER" ] || [ "$MATCHED_CONTAINER" = "null" ]; then
+        log_error "No container found with path prefix of: $FILE_PATH"
+        log_debug "Available containers:"
+        echo "$CONTAINERS" | jq -r '.[] | select(.Path != null) | .Path' | while read -r cpath; do
+            log_debug "  $cpath"
+        done
+        return 1
+    fi
+    # Retrieving the Item details from a list only gives a partial object.
+    # It's much better to retrieve the item details in foll so that we can access more info like
+    # ChildCount,RecursiveItemCount
+    ITEM_ID=$(echo "$MATCHED_CONTAINER" | jq -r '.Id')
+    FULL_ITEM=$(GetItem "$ITEM_ID")
+    log_debug "Found matching container: $(echo "$FULL_ITEM" | jq -r '[.Id, .Name, .Path] | @tsv')"
+    echo "$FULL_ITEM"
+}
+
 # GetItemByPath - Get Jellyfin item by filesystem path on the server
 #
 # Wrapper around: GET /Items (client-side path filtering)
@@ -616,7 +795,10 @@ GetItemLocalPath() {
 #       For better performance with large libraries, consider using GetItem with known item ID.
 #
 # Usage: GetItemByPath "/path/to/file.mp4"
-#
+#        path may be relative to Jellyfin root on the server,
+#        or absolute on a local mapped location
+#        or absolute on the server.
+
 # Returns JSON with item details including Id, Name, Path, Tags, Genres, Type, etc.
 #
 GetItemByPath() {
@@ -624,34 +806,49 @@ GetItemByPath() {
 
     jellyfin_require_args 1 $# "Usage: JellyFin GetItemByPath \"/path/to/file\"" || return 1
 
-    # if filepath is not root-absolute, prepend the root data folder
+    # Normalize input path: remove local prefix if present, make absolute
+    FILE_PATH="${FILE_PATH#$JELLYFIN_LOCAL_DATA_FOLDER}"
     if [[ "$FILE_PATH" != /* ]]; then
-        FILE_PATH="${JELLYFIN_ROOT_DATA_FOLDER:-/mnt/raid1/X/HOWTO}/$FILE_PATH"
+        FILE_PATH="${JELLYFIN_ROOT_DATA_FOLDER:-/mnt/raid1/X}$FILE_PATH"
     fi
-
-    # Normalize the path (remove trailing slashes, resolve symlinks if needed)
-    FILE_PATH=$(cd "$(dirname "$FILE_PATH")" 2>/dev/null && echo "$PWD/$(basename "$FILE_PATH")" || echo "$FILE_PATH")
 
     log_debug "Looking up item by path: $FILE_PATH"
 
-    # Fetch all items with Path field
-    local RESPONSE=$(curl -s -H "Authorization: MediaBrowser Token=\"$JELLYFIN_API_KEY\"" \
-        "${JELLYFIN_API_URL}/Items?Recursive=true&IncludeItemTypes=Video,Photo&Fields=Path,Name,Id,Tags,Genres,Type,Container,RunTimeTicks,PremiereDate,ImageTags&Limit=1000")
+    # Step 1: Find the container (folder) that contains this file
+    local CONTAINER
+    CONTAINER=$(GetContainerByPath "$FILE_PATH") || {
+        log_error "Failed to find container for path: $FILE_PATH"
+        return 1
+    }
 
-    # Filter results to find exact path match
-    local ITEM=$(echo "$RESPONSE" | jq --arg path "$FILE_PATH" '.Items[] | select(.Path == $path)' 2>/dev/null)
+    local CONTAINER_ID=$(echo "$CONTAINER" | jq -r '.Id')
+    local CONTAINER_PATH=$(echo "$CONTAINER" | jq -r '.Path')
 
-    if [ -z "$ITEM" ] || [ "$ITEM" = "null" ]; then
+    log_debug "Found container: $CONTAINER_ID at $CONTAINER_PATH"
+
+    # Step 2: Query files in the container
+    local FILES
+    FILES=$(Items --parent-id "$CONTAINER_ID" --type Video,Photo --fields Id,Name,Path,Tags,Genres,Type,Container,RunTimeTicks,PremiereDate,ImageTags --limit 500 )
+
+    if [ -z "$FILES" ] || [ "$FILES" = "[]" ]; then
+        log_error "No files found in container $CONTAINER_ID"
+        return 1
+    fi
+
+    # Step 3: Find exact path match in results
+    local FOUND
+    FOUND=$(echo "$FILES" | jq -e --arg path "$FILE_PATH" '.[] | select(.Path == $path)')
+
+    if [ -z "$FOUND" ] || [ "$FOUND" = "null" ]; then
         log_error "Item not found at path: $FILE_PATH"
-        log_debug "Available paths (sample):"
-        echo "$RESPONSE" | jq -r '.Items[0:3] | .[] | .Path' 2>/dev/null | while read path; do
-            log_debug "  $path"
+        log_debug "Available items in container:"
+        echo "$FILES" | jq -r '.[] | .Path' | while read -r item_path; do
+            log_debug "  $item_path"
         done
         return 1
     fi
 
-    # Output the item as JSON
-    echo "$ITEM" | jq '.'
+    echo "$FOUND"
 }
 
 # Given a local path that's configured to be mapped to the server data folder, find the corresponding Jellyfin item.

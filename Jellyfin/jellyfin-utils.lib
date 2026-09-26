@@ -111,7 +111,7 @@ jellyfin_request() {
     API_STATUS=$(echo "$response" | tail -1)
     API_BODY=$(echo "$response" | sed '$d')
 
-    log_debug "API Response: HTTP $API_STATUS"
+    log_debug "API Response: HTTP $API_STATUS, response in \$API_BODY"
 }
 
 # Check if API response indicates success (200, 201, 204)
@@ -248,6 +248,39 @@ jellyfin_filter_properties() {
     fi
     echo "$item_json" | json_filter_properties 'Id, Name, Type, Path, IsFolder, ParentId, Tags, Album, AlbumId'
 }
+
+# Helper function to summarize an item
+jellyfin_summarize_item() {
+    local item_json="$1"
+    local indent="${2:-0}"
+    local indent_spaces=""
+    local i
+
+    for ((i=0; i<indent; i++)); do
+        indent_spaces+=" |"
+    done
+
+    local id name type path isFolder
+    id=$(echo "$item_json" | jq -r '.Id')
+    type=$(echo "$item_json" | jq -r '.Type')
+    name=$(echo "$item_json" | jq -r '.Name')
+    path=$(echo "$item_json" | jq -r '.Path')
+    # trim the known server root path off this for brevity
+    path="${path#$JELLYFIN_ROOT_DATA_FOLDER}"
+    isFolder=$(echo "$item_json" | jq -r '.IsFolder')
+
+    # Use tput for colors (no hardcoded escape codes)
+    local blue=$(tput setaf 4)
+    local reset=$(tput sgr0)
+
+    if [[ "$isFolder" == "true" ]]; then
+        name="${blue}${name}${reset}"
+    fi
+
+    indent_and_id="${indent_spaces}- $id"
+    printf "$COLUMNS %-45.45s %10s %-50.50s %s\n" "$indent_and_id" "[$type]" "'$name'" "'$path'" | cut -c1-$COLUMNS
+}
+
 
 # pipe in the json, specify the fields as comma-separated args.
 json_filter_properties() {

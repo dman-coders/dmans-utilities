@@ -76,7 +76,14 @@
       "WebSearch",
       "WebFetch(domain:github.com)",
       "WebFetch(domain:docs.stashapp.cc)",
-      "WebFetch(domain:discourse.stashapp.cc)"
+      "WebFetch(domain:discourse.stashapp.cc)",
+      "Bash(LOGLEVEL=8 bash JellyFin ListLibraryFolders --output summary)",
+      "Bash(bash JellyFin ListLibraryFolders --output summary --indexed-by path)",
+      "Bash(LOGLEVEL=8 jf GetItemByPath \"/mnt/raid1/X/HOWTO/deepthroat all the way/practice for depth.gif\"date the WIP notes and the important things to know and prepare for s)",
+      "Bash(jf Items --type Video,Photo --fields Name,Path --limit 100)",
+      "Bash(LOGLEVEL=8 jf GetItemByPath \"/mnt/raid1/X/HOWTO/deepthroat all the way/practice for depth.gif\")",
+      "Bash(jf GetItemByPath \"/mnt/raid1/X/HOWTO/deepthroat all the way/practice for depth.gif\")",
+      "Bash(LOGLEVEL=8 jf Items --search-term 'ffm' --fields Name,Id)"
     ],
     "deny": [],
     "ask": []

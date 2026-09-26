@@ -2,4 +2,4 @@
 # executable wrapper to the gherkin_runner.py script
 
 GHERKINSHELL_DIR=/var/www/gherkinshell/
-python3 $GHERKINSHELL_DIR/gherkin_runner.py $@
+python3 $GHERKINSHELL_DIR/gherkin_runner.py "$@"
